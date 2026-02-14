@@ -1,0 +1,20 @@
+{
+  "name": "multi-vendor-db",
+  "version": "1.0.0",
+  "description": "Dynamic multi-vendor database SaaS platform",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter web dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "keywords": ["nuxt", "database", "saas", "multi-tenant"],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.2",
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
