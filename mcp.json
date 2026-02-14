@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "context7": {
+      "url": "https://mcp.context7.com/mcp",
+      "transport": "http"
+    },
+    "swiper": {
+      "url": "https://swiperjs.com/mcp",
+      "transport": "http"
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "obsidian-mcp-server": {
+      "command": "npx",
+      "args": ["obsidian-mcp-server"],
+      "env": {
+        "OBSIDIAN_API_KEY": "0cd92be703aa8761afc290b056500549a8d1e8a86458a24306bd8dea4e706e93",
+        "OBSIDIAN_BASE_URL": "http://127.0.0.1:27123",
+        "OBSIDIAN_VERIFY_SSL": "false",
+        "OBSIDIAN_ENABLE_CACHE": "true"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "nuxt-ui-remote": {
+      "url": "https://ui.nuxt.com/mcp",
+      "transport": "http"
+    }
+  }
+}
