@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "01-epics/00-foundation/004-frontend-setup.md",
+                "file": "00-meta/_index.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "004-frontend-setup"
+              "title": "_index"
             }
           }
         ]
@@ -185,32 +185,32 @@
   },
   "active": "50b9e1b63d7b0e0e",
   "lastOpenFiles": [
+    "01-epics/00-foundation/006-electric-sql.md",
+    "01-epics/00-foundation/004-frontend-setup.md",
+    "01-epics/00-foundation/003-auth-system.md",
+    "01-epics/00-foundation/005-company-management.md",
+    "05-tech-notes/foundation-006-electric-config.md",
+    "01-epics/00-foundation/002-db-schema-basic.md",
+    "01-epics/00-foundation/001-project-setup.md",
+    "00-meta/standards.md",
+    "00-meta/roadmap.md",
+    "00-meta/_index.md",
     "02-tests/test-foundation-003-auth-system.md",
     "02-tests/test-foundation-004-frontend-setup.md",
-    "01-epics/00-foundation/003-auth-system.md",
-    "01-epics/00-foundation/004-frontend-setup.md",
     "01-epics/00-foundation/foundation.md",
     "01-epics/00-foundation/007-company-frontend-integration.md",
-    "01-epics/00-foundation/006-electric-sql.md",
-    "01-epics/00-foundation/005-company-management.md",
-    "01-epics/00-foundation/002-db-schema-basic.md",
     "01-epics/01-company/company.md",
     "01-epics/00-foundation/005-electric-sql.md",
     "02-tests/test-foundation-002-db-schema-basic.md",
     "03-journal/2026-02-15.md",
     "01-epics/00-foundation/003-electric-sql.md",
-    "00-meta/_index.md",
     "01-epics/07-automation/automation.md",
     "01-epics/08-deployment/deployment.md",
     "01-epics/06-collaboration/collaboration.md",
     "01-epics/02-workspace/workspace.md",
     "test-foundation-002-db-schema-basic.md",
     "05-tech-notes/_index.md",
-    "01-epics/00-foundation/001-project-setup.md",
-    "00-meta/roadmap.md",
     "02-tests/test-002-database-schema.md",
-    "foundation-002-sql-migration.md",
-    "02-tests/test-foundation-001-project-setup.md",
     "01-epics/08-deployment",
     "01-epics/07-automation",
     "01-epics/06-collaboration",
