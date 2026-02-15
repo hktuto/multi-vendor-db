@@ -109,14 +109,17 @@ export function useElectricSync() {
       // Track current data for detecting updates vs inserts
       const currentData = new Map<string, T>();
 
+      // Get PGlite worker for writing sync data
+      const pg = getPgWorker();
+
       // Subscribe to stream
       const unsubscribeFn = stream.subscribe(
-        (messages: Message[]) => {
+        async (messages: Message[]) => {
           for (const message of messages) {
             // Handle control messages
             if ('headers' in message) {
               const headers = message.headers as Record<string, any>;
-              
+
               // Check for up-to-date control message
               if (headers.control === 'up-to-date') {
                 globalIsUpToDate.value = true;
@@ -124,17 +127,17 @@ export function useElectricSync() {
                 callbacks.onUpToDate?.();
                 continue;
               }
-              
+
               // Skip other control messages (snapshot-end, subset-end, etc.)
               if ('control' in headers) {
                 continue;
               }
-              
+
               // Handle event messages (move-out)
               if ('event' in headers) {
                 continue;
               }
-              
+
               // Handle change messages
               if ('operation' in headers) {
                 const changeMsg = message as {
@@ -148,17 +151,58 @@ export function useElectricSync() {
 
                 switch (headers.operation) {
                   case 'insert': {
+                    // Write to PGlite
+                    try {
+                      const columns = Object.keys(value);
+                      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+                      const sql = `INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
+                      await pg.query(sql, Object.values(value));
+                    } catch (err) {
+                      console.error(`[useElectricSync] Failed to insert into ${table}:`, err);
+                    }
                     currentData.set(key, value);
                     callbacks.onInsert?.(value);
                     break;
                   }
                   case 'update': {
                     const oldValue = currentData.get(key);
+                    // Write to PGlite using upsert (INSERT ... ON CONFLICT DO UPDATE)
+                    try {
+                      const columns = Object.keys(value);
+                      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+                      const updates = columns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
+                      // Get primary key from value or use 'id' as default
+                      const primaryKey = 'id' in value ? 'id' : columns[0];
+                      const sql = `
+                        INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')})
+                        VALUES (${placeholders})
+                        ON CONFLICT ("${primaryKey}")
+                        DO UPDATE SET ${updates}
+                      `;
+                      await pg.query(sql, Object.values(value));
+                    } catch (err) {
+                      console.error(`[useElectricSync] Failed to upsert into ${table}:`, err);
+                    }
                     currentData.set(key, value);
                     callbacks.onUpdate?.(value, oldValue as T);
                     break;
                   }
                   case 'delete': {
+                    // Delete from PGlite
+                    try {
+                      // Parse key to extract primary key value (format: "{\"id\": \"value\"}")
+                      let keyValue = key;
+                      try {
+                        const parsedKey = JSON.parse(key);
+                        keyValue = parsedKey.id || Object.values(parsedKey)[0];
+                      } catch {
+                        // If parsing fails, use key as-is (might already be the ID)
+                      }
+                      const sql = `DELETE FROM "${table}" WHERE id = $1`;
+                      await pg.query(sql, [keyValue]);
+                    } catch (err) {
+                      console.error(`[useElectricSync] Failed to delete from ${table}:`, err);
+                    }
                     currentData.delete(key);
                     callbacks.onDelete?.(key);
                     break;
