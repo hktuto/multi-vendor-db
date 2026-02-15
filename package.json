@@ -10,7 +10,9 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "db:generate": " pnpm -F web db:generate",
-    "db:migrate": " pnpm -F web db:migrate"
+    "db:migrate": " pnpm -F web db:migrate",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
   },
   "keywords": [
     "nuxt",

@@ -12,6 +12,12 @@ export default defineNuxtConfig({
     blob: true,
   },
 
+  runtimeConfig: {
+    public: {
+      appUrl: process.env.NUXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    }
+  },
+
   typescript: {
     strict: true,
   },

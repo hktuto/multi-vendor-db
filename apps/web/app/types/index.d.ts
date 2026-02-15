@@ -58,3 +58,26 @@ export interface Range {
   start: Date
   end: Date
 }
+
+export interface Company {
+  id: string
+  name: string
+  slug: string
+  ownerId: string
+  settings?: {
+    timezone?: string
+    dateFormat?: string
+    defaultLanguage?: string
+    theme?: Record<string, any>
+  }
+  createdAt: string
+  updatedAt: string
+  owner?: {
+    id: string
+    name: string
+    email: string
+    avatarUrl?: string
+  }
+  memberCount?: number
+  myRole?: 'owner' | 'admin' | 'member'
+}
