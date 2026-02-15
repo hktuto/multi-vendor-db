@@ -135,11 +135,43 @@ async function tableExists(pg: PGliteWorker, tableName: string): Promise<boolean
 }
 
 /**
+ * Check if a column exists in a table
+ */
+async function columnExists(pg: PGliteWorker, tableName: string, columnName: string): Promise<boolean> {
+  const result = await pg.query(
+    `SELECT EXISTS (
+      SELECT FROM information_schema.columns
+      WHERE table_schema = 'public'
+      AND table_name = $1
+      AND column_name = $2
+    )`,
+    [tableName, columnName]
+  );
+  return result.rows[0]?.exists === true;
+}
+
+/**
+ * Migration: Add missing columns to existing tables
+ */
+async function migrateTableColumns(pg: PGliteWorker): Promise<void> {
+  console.log('[usePgWorker] Checking for missing columns...');
+  
+  // Check and add is_active to users table
+  const hasIsActive = await columnExists(pg, 'users', 'is_active');
+  if (!hasIsActive) {
+    await pg.exec(`ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true`);
+    console.log('[usePgWorker] Added column: users.is_active');
+  }
+  
+  // Add more migrations here as needed
+}
+
+/**
  * Initialize all required tables
  */
 async function initializeTables(pg: PGliteWorker): Promise<void> {
   console.log('[usePgWorker] Checking/creating tables...');
-
+  
   for (const tableName of AUTO_CREATE_TABLES) {
     const exists = await tableExists(pg, tableName);
     if (!exists) {
@@ -152,7 +184,10 @@ async function initializeTables(pg: PGliteWorker): Promise<void> {
       console.log(`[usePgWorker] Table exists: ${tableName}`);
     }
   }
-
+  
+  // Run migrations for schema updates
+  await migrateTableColumns(pg);
+  
   console.log('[usePgWorker] Table initialization complete');
 }
 
@@ -192,6 +227,7 @@ async function createPgWorker(): Promise<PGliteWorker> {
       type: "module",
     }),
     {
+      dataDir: "idb://multi-vendor-db",
       extensions: {
         live,
         electric: electricSync(),

@@ -113,18 +113,19 @@ export function useElectricSync() {
 
       // Use syncShapeToTable for automatic sync
       // This handles inserts, updates, deletes automatically
-      const shape = await pg.sync.syncShapeToTable({
+      const shape = await pg.electric.syncShapeToTable({
         shape: {
           url,
           params: { table },
         },
         table,
         primaryKey: ["id"],
-        shapeKey: key,
+        shapeKey: table,
         onInitialSync: () => {
           globalIsUpToDate.value = true;
           globalIsSyncing.value = false;
           callbacks.onUpToDate?.();
+
         },
         onError: (error: Error | any) => {
           const err = error instanceof Error ? error : new Error(String(error));
@@ -133,7 +134,7 @@ export function useElectricSync() {
           callbacks.onError?.(err);
         },
       });
-
+      console.log("shape",shape)
       // Create unsubscribe function
       const unsubscribeFn = () => {
         shape.unsubscribe();
