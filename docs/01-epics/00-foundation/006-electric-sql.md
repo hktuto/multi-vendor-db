@@ -165,12 +165,13 @@ export function useWorkspaceSync(workspaceId: string) {
 
 ```typescript
 // /public/workers/pglite.worker.js
-import { PGlite } from '@electric-sql/pglite' 
-import { worker } from '@electric-sql/pglite/worker' 
+import { PGlite } from "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js";
+import { worker } from "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/worker/index.js";
 
 
-worker({ async init() { // Create and 
-return a PGlite instance return new PGlite() }, 
+worker({ async init() {
+	 // Create and return a PGlite instance 
+	 return new PGlite('idb://my-db') 
 })
 ```
 
