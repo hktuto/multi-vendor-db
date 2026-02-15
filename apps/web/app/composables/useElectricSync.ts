@@ -1,11 +1,15 @@
-import { ShapeStream } from "@electric-sql/client";
-import type { Message, Row } from "@electric-sql/client";
+import type {
+  SyncShapeToTableResult,
+  PGliteWithSync,
+} from "@electric-sql/pglite-sync";
 import { getPgWorker } from "./usePgWorker";
 
 /**
  * Electric SQL Sync Event Callbacks
  */
-export interface SyncEventCallbacks<T extends Record<string, any> = Record<string, any>> {
+export interface SyncEventCallbacks<
+  T extends Record<string, any> = Record<string, any>
+> {
   /** Called when new data is inserted */
   onInsert?: (data: T) => void;
   /** Called when data is updated */
@@ -35,8 +39,10 @@ export interface ShapeConfig {
 /**
  * Active subscription metadata
  */
-interface ActiveSubscription<T extends Record<string, any> = Record<string, any>> {
-  stream: ShapeStream;
+interface ActiveSubscription<
+  T extends Record<string, any> = Record<string, any>
+> {
+  shape: SyncShapeToTableResult;
   unsubscribe: () => void;
   callbacks: SyncEventCallbacks<T>;
   table: string;
@@ -51,12 +57,12 @@ const globalIsUpToDate = ref(false);
 const globalError = ref<Error | null>(null);
 
 /**
- * Composable for syncing data with Electric SQL using ShapeStream pattern
+ * Composable for syncing data with Electric SQL using syncShapeToTable pattern
  *
- * This follows the pattern where:
- * - ShapeStream handles sync events (inserts, updates, deletes)
- * - Pages query data themselves using usePgWorker
- * - Returns subscribe/unsubscribe controls, not data
+ * This uses Electric SQL's built-in syncShapeToTable which:
+ * - Automatically syncs data from server to local PGlite table
+ * - Handles inserts, updates, deletes automatically
+ * - No manual SQL needed
  *
  * Usage:
  * ```ts
@@ -83,12 +89,14 @@ export function useElectricSync() {
    * @param table - Table name to sync
    * @param shapeUrl - Optional custom shape URL (defaults to ELECTRIC_URL)
    * @param callbacks - Event callbacks for insert/update/delete/error
+   * @param shapeKey - Optional shape key for subscription identification
    * @returns Unsubscribe function
    */
   async function subscribe<T extends Record<string, any> = Record<string, any>>(
     table: string,
     shapeUrl?: string,
-    callbacks: SyncEventCallbacks<T> = {}
+    callbacks: SyncEventCallbacks<T> = {},
+    shapeKey?: string
   ): Promise<() => void> {
     // Unsubscribe existing subscription for this table
     unsubscribe(table);
@@ -98,134 +106,42 @@ export function useElectricSync() {
       globalError.value = null;
 
       const url = shapeUrl || `${ELECTRIC_URL}/v1/shape`;
+      const key = shapeKey || `${table}_sync`;
 
-      // Create ShapeStream
-      const stream = new ShapeStream({
-        url,
-        params: { table },
-        subscribe: true,
+      // Get PGlite worker for sync and cast to PGliteWithSync
+      const pg = (await getPgWorker()) as unknown as PGliteWithSync;
+
+      // Use syncShapeToTable for automatic sync
+      // This handles inserts, updates, deletes automatically
+      const shape = await pg.sync.syncShapeToTable({
+        shape: {
+          url,
+          params: { table },
+        },
+        table,
+        primaryKey: ["id"],
+        shapeKey: key,
+        onInitialSync: () => {
+          globalIsUpToDate.value = true;
+          globalIsSyncing.value = false;
+          callbacks.onUpToDate?.();
+        },
+        onError: (error: Error | any) => {
+          const err = error instanceof Error ? error : new Error(String(error));
+          globalError.value = err;
+          globalIsSyncing.value = false;
+          callbacks.onError?.(err);
+        },
       });
 
-      // Track current data for detecting updates vs inserts
-      const currentData = new Map<string, T>();
-
-      // Get PGlite worker for writing sync data
-      const pg = await getPgWorker();
-
-      // Subscribe to stream
-      const unsubscribeFn = stream.subscribe(
-        async (messages: Message[]) => {
-          for (const message of messages) {
-            // Handle control messages
-            if ('headers' in message) {
-              const headers = message.headers as Record<string, any>;
-
-              // Check for up-to-date control message
-              if (headers.control === 'up-to-date') {
-                globalIsUpToDate.value = true;
-                globalIsSyncing.value = false;
-                callbacks.onUpToDate?.();
-                continue;
-              }
-
-              // Skip other control messages (snapshot-end, subset-end, etc.)
-              if ('control' in headers) {
-                continue;
-              }
-
-              // Handle event messages (move-out)
-              if ('event' in headers) {
-                continue;
-              }
-
-              // Handle change messages
-              if ('operation' in headers) {
-                const changeMsg = message as {
-                  key: string;
-                  value: T;
-                  old_value?: Partial<T>;
-                  headers: { operation: string; [key: string]: any };
-                };
-                const key = changeMsg.key;
-                const value = changeMsg.value;
-
-                switch (headers.operation) {
-                  case 'insert': {
-                    console.log("insert")
-                    // Write to PGlite
-                    try {
-                      const currentData = await pg.query("SELECT * FROM users")
-                      console.log("exist user", currentData)
-                      const columns = Object.keys(value);
-                      console.log("data need to import", value)
-                      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-                      const sql = `INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
-                      await pg.query(sql, Object.values(value));
-                    } catch (err) {
-                      console.error(`[useElectricSync] Failed to insert into ${table}:`, err);
-                    }
-                    currentData.set(key, value);
-                    callbacks.onInsert?.(value);
-                    break;
-                  }
-                  case 'update': {
-                    const oldValue = currentData.get(key);
-                    // Write to PGlite using upsert (INSERT ... ON CONFLICT DO UPDATE)
-                    try {
-                      const columns = Object.keys(value);
-                      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-                      const updates = columns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
-                      // Get primary key from value or use 'id' as default
-                      const primaryKey = 'id' in value ? 'id' : columns[0];
-                      const sql = `
-                        INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')})
-                        VALUES (${placeholders})
-                        ON CONFLICT ("${primaryKey}")
-                        DO UPDATE SET ${updates}
-                      `;
-                      await pg.query(sql, Object.values(value));
-                    } catch (err) {
-                      console.error(`[useElectricSync] Failed to upsert into ${table}:`, err);
-                    }
-                    currentData.set(key, value);
-                    callbacks.onUpdate?.(value, oldValue as T);
-                    break;
-                  }
-                  case 'delete': {
-                    // Delete from PGlite
-                    try {
-                      // Parse key to extract primary key value (format: "{\"id\": \"value\"}")
-                      let keyValue = key;
-                      try {
-                        const parsedKey = JSON.parse(key);
-                        keyValue = parsedKey.id || Object.values(parsedKey)[0];
-                      } catch {
-                        // If parsing fails, use key as-is (might already be the ID)
-                      }
-                      const sql = `DELETE FROM "${table}" WHERE id = $1`;
-                      await pg.query(sql, [keyValue]);
-                    } catch (err) {
-                      console.error(`[useElectricSync] Failed to delete from ${table}:`, err);
-                    }
-                    currentData.delete(key);
-                    callbacks.onDelete?.(key);
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        },
-        (error: Error) => {
-          globalError.value = error;
-          globalIsSyncing.value = false;
-          callbacks.onError?.(error);
-        }
-      );
+      // Create unsubscribe function
+      const unsubscribeFn = () => {
+        shape.unsubscribe();
+      };
 
       // Store subscription
       activeSubscriptions.set(table, {
-        stream,
+        shape,
         unsubscribe: unsubscribeFn,
         callbacks,
         table,
@@ -250,8 +166,7 @@ export function useElectricSync() {
     const subscription = activeSubscriptions.get(table);
     if (subscription) {
       try {
-        subscription.unsubscribe();
-        subscription.stream.unsubscribeAll();
+        subscription.shape.unsubscribe();
       } catch (e) {
         // Ignore cleanup errors
       }

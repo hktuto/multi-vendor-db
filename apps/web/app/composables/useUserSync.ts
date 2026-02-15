@@ -17,10 +17,10 @@ export interface SyncedUser {
 }
 
 /**
- * User sync composable - manages user data sync using ShapeStream pattern
+ * User sync composable - manages user data sync using syncShapeToTable pattern
  *
  * This composable:
- * - Uses useElectricSync for sync events (ShapeStream)
+ * - Uses useElectricSync with syncShapeToTable for automatic sync
  * - Uses usePgWorker for data queries
  * - Does NOT manage data arrays - pages query themselves
  * - Provides helpers for user-specific operations
@@ -41,6 +41,9 @@ const _useUserSync = () => {
 
   /**
    * Ensure users table exists in PGlite
+   *
+   * Note: syncShapeToTable handles table creation automatically,
+   * but we keep this for backwards compatibility and manual operations
    */
   async function ensureTable(): Promise<void> {
     const worker = await pg.init();
@@ -59,12 +62,18 @@ const _useUserSync = () => {
   /**
    * Start syncing user data
    *
+   * Uses syncShapeToTable which:
+   * - Automatically syncs data from server to local PGlite table
+   * - Handles inserts, updates, deletes automatically
+   * - No manual SQL needed
+   *
    * @param callbacks - Optional event callbacks
    * @returns Unsubscribe function
    */
   async function sync(
     callbacks: SyncEventCallbacks<SyncedUser> = {}
   ): Promise<() => void> {
+    // Ensure table exists (for manual operations compatibility)
     await ensureTable();
 
     // Reset local state
@@ -95,7 +104,8 @@ const _useUserSync = () => {
           isSyncing.value = false;
           callbacks.onUpToDate?.();
         },
-      }
+      },
+      "users_sync" // shapeKey for this subscription
     );
 
     return unsubscribe;
@@ -123,7 +133,7 @@ const _useUserSync = () => {
       "SELECT * FROM users WHERE id = $1",
       [userId]
     );
-    console.log("getCurrentUser",result, userId)
+    console.log("getCurrentUser", result, userId);
     return result.rows[0] || null;
   }
 
