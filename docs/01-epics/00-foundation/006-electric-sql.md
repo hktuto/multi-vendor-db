@@ -135,7 +135,7 @@ volumes:
 ### Packages
 
 ```bash
-pnpm add @electric-sql/client @electric-sql/pglite @electric-sql/pglite-sync
+pnpm add @electric-sql/client @electric-sql/pglite @electric-sql/pglite-sync @electric-sql/pglite/live
 ```
 
 ### Sync Composables
