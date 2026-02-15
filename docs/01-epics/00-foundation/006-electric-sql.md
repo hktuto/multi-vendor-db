@@ -135,7 +135,7 @@ volumes:
 ### Packages
 
 ```bash
-pnpm add @electric-sql/client @electric-sql/pglite
+pnpm add @electric-sql/client @electric-sql/pglite @electric-sql/pglite-sync
 ```
 
 ### Sync Composables
@@ -164,7 +164,7 @@ export function useWorkspaceSync(workspaceId: string) {
 ### PGlite Web Worker
 
 ```typescript
-// workers/pglite.worker.ts
+// /public/workers/pglite.worker.js
 import { PGlite } from '@electric-sql/pglite' 
 import { worker } from '@electric-sql/pglite/worker' 
 
@@ -174,6 +174,24 @@ return a PGlite instance return new PGlite() },
 })
 ```
 
+### UsePgLite
+```ts
+import { PGliteWorker } from '@electric-sql/pglite/worker'
+import { electricSync } from '@electric-sql/pglite-sync'
+import { live } from '@electric-sql/pglite/live'
+const pg = new PGliteWorker( 
+new Worker(new URL('./my-pglite-worker.js', import.meta.url), 
+	{ type: 'module' },
+	{ extensions: { 
+		live, 
+		electric: electricSync(),
+		}, 
+	},
+), )
+
+```
+
+REMARK : for detail please check https://pglite.dev/docs/sync
 ## Tasks
 
 - [x] Create `docker-compose.yml` for PostgreSQL + Electric SQL
