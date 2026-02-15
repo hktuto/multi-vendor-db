@@ -5,16 +5,22 @@ definePageMeta({
 </script>
 
 <template>
-  <UDashboardPage>
-    <UDashboardPanel grow>
-      <UDashboardNavbar title="Companies" />
-      
+  <UDashboardPanel id="companies">
+    <template #header>
+      <UDashboardNavbar title="Companies">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
+    </template>
+    
+    <template #body>
       <UContainer class="py-6">
         <UCard>
           <template #header>
             <h2 class="text-lg font-semibold">Your Companies</h2>
           </template>
-          <p class="text-muted">
+          <p class="text-dimmed">
             Company management will be implemented in the next feature.
           </p>
           <template #footer>
@@ -25,6 +31,6 @@ definePageMeta({
           </template>
         </UCard>
       </UContainer>
-    </UDashboardPanel>
-  </UDashboardPage>
+    </template>
+  </UDashboardPanel>
 </template>
