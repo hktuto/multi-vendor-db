@@ -159,11 +159,11 @@ async function updateProfile() {
   try {
     await userSync.updateUser(user.value.id, { name: newName.value })
     newName.value = ''
-    toast.add({
-      title: 'Updated',
-      description: 'Profile updated locally (sync pending)',
-      color: 'success'
-    })
+    // toast.add({
+    //   title: 'Updated',
+    //   description: 'Profile updated locally (sync pending)',
+    //   color: 'success'
+    // })
   } catch (error) {
     toast.add({
       title: 'Error',
@@ -230,6 +230,8 @@ async function queryWithPgWorker() {
 // Watch for login/logout to sync/clear data
 watch(() => loggedIn.value, async (isLoggedIn) => {
   if (isLoggedIn) {
+    loadUsers()
+    loadCurrentUser()
     await startSync()
   } else {
     stopSync()
