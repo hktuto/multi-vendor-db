@@ -1,7 +1,7 @@
 ---
 epic: Foundation
 number: 5
-status: pending
+status: processing
 created: 2026-02-15
 started:
 completed:
@@ -13,7 +13,7 @@ epic_ref: "[[foundation]]"
 related: []
 tags:
   - epic/foundation
-  - status/pending
+  - status/processing
 ---
 
 # 005: Company Management
@@ -26,7 +26,7 @@ User management, company creation, and member invitation system. This is the mul
 |----------|-------|
 | **Epic** | Foundation |
 | **Number** | 5 |
-| **Status** | ⏳ Pending |
+| **Status** | 🚧 Processing |
 
 ## Scope
 

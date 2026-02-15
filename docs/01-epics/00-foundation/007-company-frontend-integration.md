@@ -1,7 +1,7 @@
 ---
 epic: Foundation
 number: 7
-status: pending
+status: processing
 created: 2026-02-15
 started: 
 completed: 
@@ -12,7 +12,7 @@ epic_ref: "[[foundation]]"
 related: []
 tags:
   - epic/foundation
-  - status/pending
+  - status/processing
 ---
 
 # 007: Company Frontend Integration
@@ -25,7 +25,7 @@ Integrate company management with the frontend and Electric SQL sync. Build the 
 |----------|-------|
 | **Epic** | Foundation |
 | **Number** | 7 |
-| **Status** | ⏳ Pending |
+| **Status** | 🚧 Processing |
 
 ## Prerequisites
 

@@ -1,7 +1,7 @@
 ---
 epic: Foundation
 number: 6
-status: pending
+status: processing
 created: 2026-02-15
 started: 
 completed: 
@@ -12,7 +12,7 @@ epic_ref: "[[foundation]]"
 related: []
 tags:
   - epic/foundation
-  - status/pending
+  - status/processing
 ---
 
 # 006: Electric SQL + PGlite
@@ -25,7 +25,7 @@ Setup Electric SQL for real-time sync and PGlite for local-first client database
 |----------|-------|
 | **Epic** | Foundation |
 | **Number** | 6 |
-| **Status** | ⏳ Pending |
+| **Status** | 🚧 Processing |
 
 ## Prerequisites
 

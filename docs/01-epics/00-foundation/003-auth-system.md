@@ -12,7 +12,7 @@ epic_ref: "[[foundation]]"
 related: []
 tags:
   - epic/foundation
-  - status/pending
+  - status/finish
 ---
 
 # 003: Auth System
@@ -25,7 +25,7 @@ Authentication system using `nuxt-auth-utils` for session management, OAuth, and
 |----------|-------|
 | **Epic** | Foundation |
 | **Number** | 3 |
-| **Status** | ⏳ Pending |
+| **Status** | ✅ Finish |
 
 ## Technology Choice: nuxt-auth-utils
 

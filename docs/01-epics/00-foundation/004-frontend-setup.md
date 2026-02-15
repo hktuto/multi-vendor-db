@@ -12,7 +12,7 @@ epic_ref: "[[foundation]]"
 related: []
 tags:
   - epic/foundation
-  - status/pending
+  - status/finish
 ---
 
 # 004: Frontend Setup
@@ -25,7 +25,7 @@ Build the foundation of the frontend application including navigation, middlewar
 |----------|-------|
 | **Epic** | Foundation |
 | **Number** | 4 |
-| **Status** | ⏳ Pending |
+| **Status** | ✅ Finish |
 
 ## Prerequisites
 - ✅ 003: Auth System (for useUserSession)
