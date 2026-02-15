@@ -1,7 +1,7 @@
 ---
 epic: Foundation
 number: 4
-status: pending
+status: finish
 created: 2026-02-15
 started:
 completed:
