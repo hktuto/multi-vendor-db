@@ -185,6 +185,7 @@
   },
   "active": "50b9e1b63d7b0e0e",
   "lastOpenFiles": [
+    "03-journal/2026-02-16.md",
     "01-epics/00-foundation/006-electric-sql-development-plan.md",
     "01-epics/00-foundation/003-auth-system.md",
     "01-epics/00-foundation/006-electric-sql.md",
@@ -210,7 +211,6 @@
     "01-epics/00-foundation/007-company-frontend-integration.md",
     "01-epics/01-company/company.md",
     "01-epics/00-foundation/005-electric-sql.md",
-    "02-tests/test-foundation-002-db-schema-basic.md",
     "01-epics/08-deployment",
     "01-epics/07-automation",
     "01-epics/06-collaboration",
