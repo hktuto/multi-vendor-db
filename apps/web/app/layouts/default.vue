@@ -25,6 +25,14 @@ const links = [
                 open.value = false;
             },
         },
+        {
+            label: "Electric SQL",
+            icon: "i-lucide-zap",
+            to: "/electric-test",
+            onSelect: () => {
+                open.value = false;
+            },
+        },
     ],
     [
         {

@@ -1,5 +1,15 @@
 import type { AvatarProps } from '@nuxt/ui'
 
+// Extend nuxt-auth-utils User type
+declare module '#auth-utils' {
+  interface User {
+    id: string
+    name: string
+    email: string
+    avatarUrl?: string | null
+  }
+}
+
 export type UserStatus = 'subscribed' | 'unsubscribed' | 'bounced'
 export type SaleStatus = 'paid' | 'failed' | 'refunded'
 

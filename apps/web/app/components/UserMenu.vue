@@ -6,6 +6,7 @@ defineProps<{
 }>()
 
 const { user, clear } = useUserSession()
+const { logout: electricLogout } = useUserSync()
 const colorMode = useColorMode()
 const appConfig = useAppConfig()
 const router = useRouter()
@@ -23,6 +24,9 @@ const userInfo = computed(() => ({
 }))
 
 async function logout() {
+  // Clear Electric SQL synced data first
+  await electricLogout()
+  
   await $fetch('/api/auth/logout', { method: 'POST' })
   await clear()
   await router.push('/login')

@@ -4,7 +4,6 @@
   "description": "Dynamic multi-vendor database SaaS platform",
   "private": true,
   "scripts": {
-    "build": "pnpm -r build",
     "dev": "pnpm --filter web dev",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
@@ -12,7 +11,20 @@
     "db:generate": " pnpm -F web db:generate",
     "db:migrate": " pnpm -F web db:migrate",
     "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down"
+    "docker:down": "docker-compose down",
+    "dev:start": "pm2 start ecosystem.config.js",
+    "dev:stop": "pm2 stop web-dev",
+    "dev:restart": "pm2 restart web-dev",
+    "dev:logs": "pm2 logs web-dev",
+    "dev:status": "pm2 status",
+    "dev:delete": "pm2 delete web-dev",
+    "build": "pnpm --filter web build",
+    "prod:start": "pm2 start ecosystem.prod.config.js",
+    "prod:stop": "pm2 stop web-prod",
+    "prod:restart": "pm2 restart web-prod",
+    "prod:logs": "pm2 logs web-prod",
+    "prod:status": "pm2 status",
+    "prod:build-start": "pnpm build && echo 'Production server will run on http://localhost:3001' && pnpm prod:start"
   },
   "keywords": [
     "nuxt",
@@ -24,6 +36,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.2",
   "devDependencies": {
+    "pm2": "^6.0.14",
     "typescript": "^5.7.0"
   }
 }
