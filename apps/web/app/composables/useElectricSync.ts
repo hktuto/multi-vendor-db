@@ -152,62 +152,62 @@ export function useElectricSync() {
                 switch (headers.operation) {
                   case 'insert': {
                     console.log("insert")
-                    // Write to PGlite
-                    try {
-                      const currentData = await pg.query("SELECT * FROM users")
-                      console.log("exist user", currentData)
-                      const columns = Object.keys(value);
-                      console.log("data need to import", value)
-                      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-                      const sql = `INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
-                      await pg.query(sql, Object.values(value));
-                    } catch (err) {
-                      console.error(`[useElectricSync] Failed to insert into ${table}:`, err);
-                    }
-                    currentData.set(key, value);
+                    // // Write to PGlite
+                    // try {
+                    //   const currentData = await pg.query("SELECT * FROM users")
+                    //   console.log("exist user", currentData)
+                    //   const columns = Object.keys(value);
+                    //   console.log("data need to import", value)
+                    //   const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+                    //   const sql = `INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
+                    //   await pg.query(sql, Object.values(value));
+                    // } catch (err) {
+                    //   console.error(`[useElectricSync] Failed to insert into ${table}:`, err);
+                    // }
+                    // currentData.set(key, value);
                     callbacks.onInsert?.(value);
                     break;
                   }
                   case 'update': {
                     const oldValue = currentData.get(key);
-                    // Write to PGlite using upsert (INSERT ... ON CONFLICT DO UPDATE)
-                    try {
-                      const columns = Object.keys(value);
-                      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-                      const updates = columns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
-                      // Get primary key from value or use 'id' as default
-                      const primaryKey = 'id' in value ? 'id' : columns[0];
-                      const sql = `
-                        INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')})
-                        VALUES (${placeholders})
-                        ON CONFLICT ("${primaryKey}")
-                        DO UPDATE SET ${updates}
-                      `;
-                      await pg.query(sql, Object.values(value));
-                    } catch (err) {
-                      console.error(`[useElectricSync] Failed to upsert into ${table}:`, err);
-                    }
-                    currentData.set(key, value);
+                    // // Write to PGlite using upsert (INSERT ... ON CONFLICT DO UPDATE)
+                    // try {
+                    //   const columns = Object.keys(value);
+                    //   const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+                    //   const updates = columns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
+                    //   // Get primary key from value or use 'id' as default
+                    //   const primaryKey = 'id' in value ? 'id' : columns[0];
+                    //   const sql = `
+                    //     INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')})
+                    //     VALUES (${placeholders})
+                    //     ON CONFLICT ("${primaryKey}")
+                    //     DO UPDATE SET ${updates}
+                    //   `;
+                    //   await pg.query(sql, Object.values(value));
+                    // } catch (err) {
+                    //   console.error(`[useElectricSync] Failed to upsert into ${table}:`, err);
+                    // }
+                    // currentData.set(key, value);
                     callbacks.onUpdate?.(value, oldValue as T);
                     break;
                   }
                   case 'delete': {
                     // Delete from PGlite
-                    try {
-                      // Parse key to extract primary key value (format: "{\"id\": \"value\"}")
-                      let keyValue = key;
-                      try {
-                        const parsedKey = JSON.parse(key);
-                        keyValue = parsedKey.id || Object.values(parsedKey)[0];
-                      } catch {
-                        // If parsing fails, use key as-is (might already be the ID)
-                      }
-                      const sql = `DELETE FROM "${table}" WHERE id = $1`;
-                      await pg.query(sql, [keyValue]);
-                    } catch (err) {
-                      console.error(`[useElectricSync] Failed to delete from ${table}:`, err);
-                    }
-                    currentData.delete(key);
+                    // try {
+                    //   // Parse key to extract primary key value (format: "{\"id\": \"value\"}")
+                    //   let keyValue = key;
+                    //   try {
+                    //     const parsedKey = JSON.parse(key);
+                    //     keyValue = parsedKey.id || Object.values(parsedKey)[0];
+                    //   } catch {
+                    //     // If parsing fails, use key as-is (might already be the ID)
+                    //   }
+                    //   const sql = `DELETE FROM "${table}" WHERE id = $1`;
+                    //   await pg.query(sql, [keyValue]);
+                    // } catch (err) {
+                    //   console.error(`[useElectricSync] Failed to delete from ${table}:`, err);
+                    // }
+                    // currentData.delete(key);
                     callbacks.onDelete?.(key);
                     break;
                   }

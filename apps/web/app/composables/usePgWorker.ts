@@ -192,6 +192,7 @@ async function createPgWorker(): Promise<PGliteWorker> {
       type: "module",
     }),
     {
+      dataDir:"idb://main-multi-vendor",
       extensions: {
         live,
         electric: electricSync(),
