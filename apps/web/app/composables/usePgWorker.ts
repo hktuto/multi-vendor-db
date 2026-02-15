@@ -120,14 +120,18 @@ let pgInstance: PGliteWorker | null = null;
 let initPromise: Promise<PGliteWorker> | null = null;
 
 /**
- * Check if a table exists in PGlite
+ * Check if a table exists in PGlite (PostgreSQL-compatible)
  */
 async function tableExists(pg: PGliteWorker, tableName: string): Promise<boolean> {
   const result = await pg.query(
-    `SELECT name FROM sqlite_master WHERE type='table' AND name=$1`,
+    `SELECT EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = $1
+    )`,
     [tableName]
   );
-  return result.rows.length > 0;
+  return result.rows[0]?.exists === true;
 }
 
 /**
