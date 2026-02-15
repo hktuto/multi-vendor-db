@@ -1,329 +1,258 @@
-import type { SyncShapeToTableResult } from "@electric-sql/pglite-sync";
+import { ShapeStream } from "@electric-sql/client";
+import type { Message, Row } from "@electric-sql/client";
 import { getPgWorker } from "./usePgWorker";
 
 /**
- * Electric SQL Sync Events
+ * Electric SQL Sync Event Callbacks
  */
-export interface SyncEvents {
+export interface SyncEventCallbacks<T extends Record<string, any> = Record<string, any>> {
   /** Called when new data is inserted */
-  onInsert?: (data: any) => void;
+  onInsert?: (data: T) => void;
   /** Called when data is updated */
-  onUpdate?: (data: any, oldData: any) => void;
+  onUpdate?: (data: T, oldData: T) => void;
   /** Called when data is deleted */
   onDelete?: (id: string) => void;
-  /** Called when sync status changes */
-  onStatusChange?: (status: 'syncing' | 'up-to-date' | 'error') => void;
-  /** Called when initial sync is complete */
-  onInitialSync?: () => void;
   /** Called on sync error */
   onError?: (error: Error) => void;
+  /** Called when initial sync is complete (up-to-date) */
+  onUpToDate?: () => void;
 }
 
 /**
- * Shape configuration for table sync
+ * Shape configuration for subscription
  */
 export interface ShapeConfig {
   /** Table name to sync */
   table: string;
-  /** Shape key for identification */
-  shapeKey: string;
-  /** Electric SQL shape URL */
-  shapeUrl: string;
-  /** Primary key columns */
-  primaryKey?: string[];
+  /** Primary key column name (default: 'id') */
+  primaryKey?: string;
   /** Optional WHERE clause for filtering */
   where?: string;
-  /** Sync interval in ms (default: realtime) */
-  interval?: number;
+  /** Shape key for caching/identification */
+  shapeKey?: string;
 }
 
 /**
- * Reactive sync state for a table
+ * Active subscription metadata
  */
-export interface TableSyncState {
-  data: Ref<any[]>;
-  isSyncing: Ref<boolean>;
-  isUpToDate: Ref<boolean>;
-  error: Ref<Error | null>;
-  lastSynced: Ref<Date | null>;
+interface ActiveSubscription<T extends Record<string, any> = Record<string, any>> {
+  stream: ShapeStream;
+  unsubscribe: () => void;
+  callbacks: SyncEventCallbacks<T>;
+  table: string;
 }
 
+// Track active subscriptions - using any for flexibility with generics
+const activeSubscriptions = new Map<string, ActiveSubscription<any>>();
+
+// Global sync state
+const globalIsSyncing = ref(false);
+const globalIsUpToDate = ref(false);
+const globalError = ref<Error | null>(null);
+
 /**
- * Composable for syncing a table with Electric SQL
+ * Composable for syncing data with Electric SQL using ShapeStream pattern
+ * 
+ * This follows the pattern where:
+ * - ShapeStream handles sync events (inserts, updates, deletes)
+ * - Pages query data themselves using usePgWorker
+ * - Returns subscribe/unsubscribe controls, not data
  * 
  * Usage:
  * ```ts
- * const { data, isSyncing, isUpToDate } = useElectricSync({
- *   table: 'users',
- *   shapeKey: 'users-sync',
- *   shapeUrl: 'http://localhost:3000/v1/shape/users',
+ * const electric = useElectricSync()
+ * 
+ * // Subscribe to sync events for a table
+ * await electric.subscribe('users', 'http://localhost:3000/v1/shape', {
  *   onInsert: (user) => console.log('New user:', user),
  *   onUpdate: (user, old) => console.log('Updated:', user),
  *   onDelete: (id) => console.log('Deleted:', id),
  * })
+ * 
+ * // Later, unsubscribe
+ * electric.unsubscribe('users')
  * ```
  */
-export function useElectricSync(config: ShapeConfig & SyncEvents): TableSyncState {
-  const { 
-    table, 
-    shapeKey, 
-    shapeUrl, 
-    primaryKey = ['id'],
-    onInsert,
-    onUpdate, 
-    onDelete,
-    onStatusChange,
-    onInitialSync,
-    onError
-  } = config;
-
-  // Reactive state
-  const data = ref<any[]>([]);
-  const isSyncing = ref(false);
-  const isUpToDate = ref(false);
-  const error = ref<Error | null>(null);
-  const lastSynced = ref<Date | null>(null);
-  
-  // Internal state
-  let shapeResult: SyncShapeToTableResult | null = null;
-  let unsubscribeFn: (() => void) | null = null;
-  let watchInterval: ReturnType<typeof setInterval> | null = null;
+export function useElectricSync() {
+  const config = useRuntimeConfig();
+  const ELECTRIC_URL = config.public.electricUrl || "http://localhost:3000";
 
   /**
-   * Start syncing the table
+   * Subscribe to sync events for a table
+   * 
+   * @param table - Table name to sync
+   * @param shapeUrl - Optional custom shape URL (defaults to ELECTRIC_URL)
+   * @param callbacks - Event callbacks for insert/update/delete/error
+   * @returns Unsubscribe function
    */
-  async function startSync() {
+  async function subscribe<T extends Record<string, any> = Record<string, any>>(
+    table: string,
+    shapeUrl?: string,
+    callbacks: SyncEventCallbacks<T> = {}
+  ): Promise<() => void> {
+    // Unsubscribe existing subscription for this table
+    unsubscribe(table);
+
     try {
-      isSyncing.value = true;
-      error.value = null;
-      onStatusChange?.('syncing');
+      globalIsSyncing.value = true;
+      globalError.value = null;
 
-      const pg = await getPgWorker();
+      const url = shapeUrl || `${ELECTRIC_URL}/v1/shape`;
 
-      // Ensure table exists with schema
-      await ensureTable(pg, table);
-
-      // Subscribe to live query for real-time updates
-      const liveResult = await pg.live.query(`SELECT * FROM ${table}`);
-      
-      // Handle live query changes
-      unsubscribeFn = liveResult.subscribe((results: any) => {
-        const newData = results.rows || [];
-        
-        // Detect changes
-        detectChanges(data.value, newData);
-        
-        // Update data
-        data.value = newData;
-        lastSynced.value = new Date();
+      // Create ShapeStream
+      const stream = new ShapeStream({
+        url,
+        params: { table },
+        subscribe: true,
       });
 
-      // Sync shape to table
-      shapeResult = await pg.sync.syncShapeToTable({
-        shape: {
-          url: shapeUrl,
-          params: { table },
-        },
-        table,
-        primaryKey,
-        shapeKey,
-      });
+      // Track current data for detecting updates vs inserts
+      const currentData = new Map<string, T>();
 
-      // Watch sync status
-      watchInterval = setInterval(() => {
-        if (shapeResult) {
-          isUpToDate.value = shapeResult.isUpToDate;
-          
-          if (shapeResult.isUpToDate && isSyncing.value) {
-            isSyncing.value = false;
-            onStatusChange?.('up-to-date');
-            onInitialSync?.();
+      // Subscribe to stream
+      const unsubscribeFn = stream.subscribe(
+        (messages: Message[]) => {
+          for (const message of messages) {
+            // Handle control messages
+            if ('headers' in message) {
+              const headers = message.headers as Record<string, any>;
+              
+              // Check for up-to-date control message
+              if (headers.control === 'up-to-date') {
+                globalIsUpToDate.value = true;
+                globalIsSyncing.value = false;
+                callbacks.onUpToDate?.();
+                continue;
+              }
+              
+              // Skip other control messages (snapshot-end, subset-end, etc.)
+              if ('control' in headers) {
+                continue;
+              }
+              
+              // Handle event messages (move-out)
+              if ('event' in headers) {
+                continue;
+              }
+              
+              // Handle change messages
+              if ('operation' in headers) {
+                const changeMsg = message as {
+                  key: string;
+                  value: T;
+                  old_value?: Partial<T>;
+                  headers: { operation: string; [key: string]: any };
+                };
+                const key = changeMsg.key;
+                const value = changeMsg.value;
+
+                switch (headers.operation) {
+                  case 'insert': {
+                    currentData.set(key, value);
+                    callbacks.onInsert?.(value);
+                    break;
+                  }
+                  case 'update': {
+                    const oldValue = currentData.get(key);
+                    currentData.set(key, value);
+                    callbacks.onUpdate?.(value, oldValue as T);
+                    break;
+                  }
+                  case 'delete': {
+                    currentData.delete(key);
+                    callbacks.onDelete?.(key);
+                    break;
+                  }
+                }
+              }
+            }
           }
+        },
+        (error: Error) => {
+          globalError.value = error;
+          globalIsSyncing.value = false;
+          callbacks.onError?.(error);
         }
-      }, 100);
+      );
 
-    } catch (err) {
-      error.value = err as Error;
-      isSyncing.value = false;
-      onStatusChange?.('error');
-      onError?.(err as Error);
-      console.error(`[useElectricSync] Failed to sync ${table}:`, err);
+      // Store subscription
+      activeSubscriptions.set(table, {
+        stream,
+        unsubscribe: unsubscribeFn,
+        callbacks,
+        table,
+      });
+
+      return () => unsubscribe(table);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      globalError.value = err;
+      globalIsSyncing.value = false;
+      callbacks.onError?.(err);
+      throw err;
     }
   }
 
   /**
-   * Stop syncing and cleanup
+   * Unsubscribe from sync events for a table
+   * 
+   * @param table - Table name to unsubscribe
    */
-  async function stopSync() {
-    // Stop watching sync status
-    if (watchInterval) {
-      clearInterval(watchInterval);
-      watchInterval = null;
-    }
-
-    // Unsubscribe from live query
-    if (unsubscribeFn) {
-      unsubscribeFn();
-      unsubscribeFn = null;
-    }
-
-    // Unsync shape
-    if (shapeResult) {
-      await shapeResult.unsubscribe();
-      shapeResult = null;
-    }
-
-    isSyncing.value = false;
-    isUpToDate.value = false;
-    console.log(`[useElectricSync] Stopped sync for ${table}`);
-  }
-
-  /**
-   * Detect changes between old and new data
-   * Trigger event callbacks
-   */
-  function detectChanges(oldData: any[], newData: any[]) {
-    const oldMap = new Map(oldData.map(item => [item.id, item]));
-    const newMap = new Map(newData.map(item => [item.id, item]));
-
-    // Detect inserts
-    for (const [id, item] of newMap) {
-      if (!oldMap.has(id)) {
-        onInsert?.(item);
+  function unsubscribe(table: string): void {
+    const subscription = activeSubscriptions.get(table);
+    if (subscription) {
+      try {
+        subscription.unsubscribe();
+        subscription.stream.unsubscribeAll();
+      } catch (e) {
+        // Ignore cleanup errors
       }
+      activeSubscriptions.delete(table);
     }
 
-    // Detect updates
-    for (const [id, newItem] of newMap) {
-      const oldItem = oldMap.get(id);
-      if (oldItem && JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
-        onUpdate?.(newItem, oldItem);
-      }
-    }
-
-    // Detect deletes
-    for (const [id, item] of oldMap) {
-      if (!newMap.has(id)) {
-        onDelete?.(id);
-      }
+    // Reset state if no more subscriptions
+    if (activeSubscriptions.size === 0) {
+      globalIsSyncing.value = false;
+      globalIsUpToDate.value = false;
     }
   }
 
   /**
-   * Ensure table exists with proper schema
+   * Unsubscribe from all active syncs
    */
-  async function ensureTable(pg: any, tableName: string) {
-    // Get table info from sync to determine schema
-    // For now, create a basic table that can hold any data
-    await pg.query(`
-      CREATE TABLE IF NOT EXISTS ${tableName} (
-        id TEXT PRIMARY KEY,
-        data JSONB DEFAULT '{}',
-        _modified_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `).catch(() => {
-      // Table might already exist with different schema
-    });
+  function unsubscribeAll(): void {
+    for (const table of Array.from(activeSubscriptions.keys())) {
+      unsubscribe(table);
+    }
   }
 
   /**
-   * Execute a query on the synced table
+   * Check if a table has an active subscription
    */
-  async function query<T = any>(
-    sql: string,
-    params?: any[]
-  ): Promise<T[]> {
-    const pg = await getPgWorker();
-    const result = await pg.query(sql, params);
-    return result.rows as T[];
+  function hasSubscription(table: string): boolean {
+    return activeSubscriptions.has(table);
   }
 
   /**
-   * Insert data into table
+   * Get list of subscribed tables
    */
-  async function insert(item: any) {
-    const pg = await getPgWorker();
-    const columns = Object.keys(item);
-    const values = Object.values(item);
-    const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-    
-    await pg.query(
-      `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
-      values
-    );
+  function getSubscribedTables(): string[] {
+    return Array.from(activeSubscriptions.keys());
   }
-
-  /**
-   * Update data in table
-   */
-  async function update(id: string, changes: any) {
-    const pg = await getPgWorker();
-    const sets = Object.keys(changes)
-      .map((key, i) => `${key} = $${i + 2}`)
-      .join(', ');
-    const values = [id, ...Object.values(changes)];
-    
-    await pg.query(
-      `UPDATE ${table} SET ${sets} WHERE id = $1`,
-      values
-    );
-  }
-
-  /**
-   * Delete data from table
-   */
-  async function remove(id: string) {
-    const pg = await getPgWorker();
-    await pg.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
-  }
-
-  /**
-   * Refresh data manually
-   */
-  async function refresh() {
-    const pg = await getPgWorker();
-    const result = await pg.query(`SELECT * FROM ${table}`);
-    data.value = result.rows;
-    lastSynced.value = new Date();
-  }
-
-  // Auto-start sync on mount
-  onMounted(() => {
-    startSync();
-  });
-
-  // Auto-stop sync on unmount
-  onUnmounted(() => {
-    stopSync();
-  });
 
   return {
-    // Reactive state
-    data: readonly(data),
-    isSyncing: readonly(isSyncing),
-    isUpToDate: readonly(isUpToDate),
-    error: readonly(error),
-    lastSynced: readonly(lastSynced),
-    
-    // Manual controls
-    startSync,
-    stopSync,
-    refresh,
-    
-    // CRUD operations
-    query,
-    insert,
-    update,
-    remove,
+    // Reactive state (readonly)
+    isSyncing: readonly(globalIsSyncing),
+    isUpToDate: readonly(globalIsUpToDate),
+    error: readonly(globalError),
+
+    // Methods
+    subscribe,
+    unsubscribe,
+    unsubscribeAll,
+    hasSubscription,
+    getSubscribedTables,
   };
 }
 
-/**
- * Legacy useElectricSync for backward compatibility
- * Use the new config-based version above for new code
- */
-export function useElectricSyncLegacy() {
-  return {
-    // ... keep existing implementation for backward compat
-  };
-}
+export default useElectricSync;
