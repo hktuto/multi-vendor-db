@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { z } from 'zod'
 
-// Redirect if already logged in
+definePageMeta({
+  layout: 'auth'
+})
+
 const { loggedIn, fetch: refreshSession } = useUserSession()
 const route = useRoute()
 const toast = useToast()
 
-// If already logged in, redirect
+// Redirect if already logged in
 if (loggedIn.value) {
-  const redirect = route.query.redirect as string
-  await navigateTo(redirect || '/dashboard')
+  await navigateTo('/dashboard')
 }
 
 const schema = z.object({
@@ -42,12 +44,8 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         color: 'success'
       })
       
-      // Refresh session
       await refreshSession()
-      
-      // Redirect
-      const redirect = route.query.redirect as string
-      await navigateTo(redirect || '/dashboard')
+      await navigateTo('/dashboard')
     }
   } catch (error: any) {
     toast.add({
@@ -60,7 +58,6 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
   }
 }
 
-// OAuth login handlers
 function loginWithGitHub() {
   window.location.href = '/api/auth/github'
 }
@@ -69,7 +66,6 @@ function loginWithGoogle() {
   window.location.href = '/api/auth/google'
 }
 
-// Check for OAuth errors
 onMounted(() => {
   const error = route.query.error as string
   if (error) {
@@ -87,93 +83,91 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-    <UCard class="w-full max-w-md">
-      <template #header>
-        <div class="text-center">
-          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Welcome back</h1>
-          <p class="text-gray-500 dark:text-gray-400 mt-1">Sign in to your account</p>
+  <UCard class="w-full max-w-md">
+    <template #header>
+      <div class="text-center">
+        <h1 class="text-2xl font-bold">Welcome back</h1>
+        <p class="text-muted mt-1">Sign in to your account</p>
+      </div>
+    </template>
+
+    <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
+      <UFormField label="Email" name="email">
+        <UInput
+          v-model="state.email"
+          type="email"
+          placeholder="you@example.com"
+          icon="i-lucide-mail"
+          class="w-full"
+        />
+      </UFormField>
+
+      <UFormField label="Password" name="password">
+        <UInput
+          v-model="state.password"
+          type="password"
+          placeholder="••••••••"
+          icon="i-lucide-lock"
+          class="w-full"
+        />
+      </UFormField>
+
+      <div class="flex items-center justify-between">
+        <UCheckbox label="Remember me" />
+        <NuxtLink to="/forgot-password" class="text-sm text-primary hover:underline">
+          Forgot password?
+        </NuxtLink>
+      </div>
+
+      <UButton
+        type="submit"
+        color="primary"
+        block
+        :loading="loading"
+      >
+        Sign in
+      </UButton>
+    </UForm>
+
+    <div class="mt-6">
+      <div class="relative">
+        <div class="absolute inset-0 flex items-center">
+          <div class="w-full border-t border-default" />
         </div>
-      </template>
-
-      <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
-        <UFormField label="Email" name="email">
-          <UInput
-            v-model="state.email"
-            type="email"
-            placeholder="you@example.com"
-            icon="i-heroicons-envelope"
-            class="w-full"
-          />
-        </UFormField>
-
-        <UFormField label="Password" name="password">
-          <UInput
-            v-model="state.password"
-            type="password"
-            placeholder="••••••••"
-            icon="i-heroicons-lock-closed"
-            class="w-full"
-          />
-        </UFormField>
-
-        <div class="flex items-center justify-between">
-          <UCheckbox label="Remember me" />
-          <NuxtLink to="/forgot-password" class="text-sm text-primary hover:underline">
-            Forgot password?
-          </NuxtLink>
-        </div>
-
-        <UButton
-          type="submit"
-          color="primary"
-          block
-          :loading="loading"
-        >
-          Sign in
-        </UButton>
-      </UForm>
-
-      <div class="mt-6">
-        <div class="relative">
-          <div class="absolute inset-0 flex items-center">
-            <div class="w-full border-t border-gray-200 dark:border-gray-700" />
-          </div>
-          <div class="relative flex justify-center text-sm">
-            <span class="px-2 bg-white dark:bg-gray-800 text-gray-500">Or continue with</span>
-          </div>
-        </div>
-
-        <div class="mt-6 grid grid-cols-2 gap-3">
-          <UButton
-            color="neutral"
-            variant="outline"
-            block
-            @click="loginWithGitHub"
-          >
-            <UIcon name="i-simple-icons-github" class="mr-2" />
-            GitHub
-          </UButton>
-          <UButton
-            color="neutral"
-            variant="outline"
-            block
-            @click="loginWithGoogle"
-          >
-            <UIcon name="i-simple-icons-google" class="mr-2" />
-            Google
-          </UButton>
+        <div class="relative flex justify-center text-sm">
+          <span class="px-2 bg-default text-muted">Or continue with</span>
         </div>
       </div>
 
-      <template #footer>
-        <p class="text-center text-sm text-gray-500">
-          Don't have an account?
-          <NuxtLink to="/register" class="text-primary hover:underline">
-            Sign up
-          </NuxtLink>
-        </p>
-      </template>
-    </UCard>
-  </div>
+      <div class="mt-6 grid grid-cols-2 gap-3">
+        <UButton
+          color="neutral"
+          variant="outline"
+          block
+          @click="loginWithGitHub"
+        >
+          <UIcon name="i-simple-icons-github" class="mr-2" />
+          GitHub
+        </UButton>
+        <UButton
+          color="neutral"
+          variant="outline"
+          block
+          @click="loginWithGoogle"
+        >
+          <UIcon name="i-simple-icons-google" class="mr-2" />
+          Google
+        </UButton>
+      </div>
+    </div>
+
+    <template #footer>
+      <p class="text-center text-sm text-muted">
+        Don't have an account?
+        <NuxtLink to="/register" class="text-primary hover:underline">
+          Sign up
+        </NuxtLink>
+      </p>
+    </template>
+  </UCard>
 </template>

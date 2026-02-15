@@ -15,7 +15,11 @@ export default defineNuxtConfig({
   typescript: {
     strict: true,
   },
-
+  nitro: {
+    experimental: {
+      tasks: true,
+    },
+  },
   vite: {
     css: {
       preprocessorOptions: {
