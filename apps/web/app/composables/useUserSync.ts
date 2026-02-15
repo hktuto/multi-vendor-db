@@ -1,7 +1,7 @@
 import { createSharedComposable } from "@vueuse/core";
 import { useElectricSync } from "./useElectricSync";
 import { usePgWorker } from "./usePgWorker";
-import type { SyncEventCallbacks } from "./useElectricSync";
+import type { SyncEventCallbacks, ShapeConfig } from "./useElectricSync";
 
 /**
  * User table schema
@@ -17,17 +17,35 @@ export interface SyncedUser {
 }
 
 /**
+ * Configuration for useUserSync
+ */
+export interface UseUserSyncOptions {
+  /** Auto-refresh data when sync events fire (insert/update/delete) */
+  autoRefresh?: boolean;
+  /** Electric URL (defaults to runtime config) */
+  electricUrl?: string;
+  /** Shape key for subscription identification */
+  shapeKey?: string;
+}
+
+/**
  * User sync composable - manages user data sync using syncShapeToTable pattern
  *
  * This composable:
  * - Uses useElectricSync with syncShapeToTable for automatic sync
  * - Uses usePgWorker for data queries
- * - Does NOT manage data arrays - pages query themselves
- * - Provides helpers for user-specific operations
+ * - Loads existing data from DB first, then starts sync for updates
+ * - Optional auto-refresh on sync events
+ * - Provides reactive `data` array for UI bindings
  *
  * Uses createSharedComposable for singleton pattern
  */
-const _useUserSync = () => {
+const _useUserSync = (options: UseUserSyncOptions = {}) => {
+  const {
+    autoRefresh = false,
+    shapeKey = "users_sync",
+  } = options;
+
   const electric = useElectricSync();
   const pg = usePgWorker();
 
@@ -35,9 +53,35 @@ const _useUserSync = () => {
   const isSyncing = useState("user-sync-active", () => false);
   const isUpToDate = useState("user-sync-uptodate", () => false);
   const syncError = useState<Error | null>("user-sync-error", () => null);
+  
+  // Reactive data array - automatically updates when refresh() is called
+  const data = useState<SyncedUser[]>("user-sync-data", () => []);
 
   const config = useRuntimeConfig();
-  const ELECTRIC_URL = config.public.electricUrl || "http://localhost:3000";
+  const ELECTRIC_URL = options.electricUrl || config.public.electricUrl || "http://localhost:3000";
+
+  /**
+   * Load all users from local database
+   * Called initially and for manual refresh
+   */
+  async function loadUsers(): Promise<SyncedUser[]> {
+    const worker = await pg.init();
+    const result = await worker.query<SyncedUser>(
+      "SELECT * FROM users ORDER BY created_at DESC"
+    );
+    const users = result.rows;
+    data.value = users;
+    return users;
+  }
+
+  /**
+   * Refresh data from local database
+   * Can be called manually or automatically on sync events
+   */
+  async function refresh(): Promise<SyncedUser[]> {
+    console.log("[useUserSync] Refreshing user data...");
+    return await loadUsers();
+  }
 
   /**
    * Ensure users table exists in PGlite
@@ -62,10 +106,9 @@ const _useUserSync = () => {
   /**
    * Start syncing user data
    *
-   * Uses syncShapeToTable which:
-   * - Automatically syncs data from server to local PGlite table
-   * - Handles inserts, updates, deletes automatically
-   * - No manual SQL needed
+   * Uses hybrid approach:
+   * 1. Load existing data from DB first (for immediate UI display)
+   * 2. Then start syncShapeToTable for real-time updates
    *
    * @param callbacks - Optional event callbacks
    * @returns Unsubscribe function
@@ -81,17 +124,32 @@ const _useUserSync = () => {
     isUpToDate.value = false;
     syncError.value = null;
 
-    const unsubscribe = await electric.subscribe<SyncedUser>(
-      "users",
-      `${ELECTRIC_URL}/v1/shape`,
-      {
-        onInsert: (user) => {
+    // STEP 1: Load existing data from DB first
+    // This ensures UI has data immediately, even before sync completes
+    try {
+      await loadUsers();
+      console.log("[useUserSync] Initial data loaded from DB:", data.value.length, "users");
+    } catch (error) {
+      console.warn("[useUserSync] Failed to load initial data:", error);
+      // Continue with sync even if initial load fails
+    }
+
+    // STEP 2: Start sync for real-time updates
+    const unsubscribe = await electric.subscribe<SyncedUser>({
+      table: "users",
+      shapeUrl: `${ELECTRIC_URL}/v1/shape`,
+      shapeKey,
+      callbacks: {
+        onInsert: async (user) => {
+          if (autoRefresh) await refresh();
           callbacks.onInsert?.(user);
         },
-        onUpdate: (user, oldUser) => {
+        onUpdate: async (user, oldUser) => {
+          if (autoRefresh) await refresh();
           callbacks.onUpdate?.(user, oldUser);
         },
-        onDelete: (id) => {
+        onDelete: async (id) => {
+          if (autoRefresh) await refresh();
           callbacks.onDelete?.(id);
         },
         onError: (error) => {
@@ -105,8 +163,7 @@ const _useUserSync = () => {
           callbacks.onUpToDate?.();
         },
       },
-      "users_sync" // shapeKey for this subscription
-    );
+    });
 
     return unsubscribe;
   }
@@ -151,13 +208,10 @@ const _useUserSync = () => {
 
   /**
    * Get all users
+   * @deprecated Use reactive `data` or `refresh()` instead
    */
   async function getAllUsers(): Promise<SyncedUser[]> {
-    const worker = await pg.init();
-    const result = await worker.query<SyncedUser>(
-      "SELECT * FROM users ORDER BY created_at DESC"
-    );
-    return result.rows;
+    return await loadUsers();
   }
 
   /**
@@ -186,6 +240,7 @@ const _useUserSync = () => {
        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [data.id, data.email, data.name, data.avatar_url]
     );
+    if (autoRefresh) await refresh();
   }
 
   /**
@@ -221,6 +276,7 @@ const _useUserSync = () => {
       `UPDATE users SET ${fields.join(", ")} WHERE id = $${values.length}`,
       values
     );
+    if (autoRefresh) await refresh();
   }
 
   /**
@@ -229,6 +285,7 @@ const _useUserSync = () => {
   async function deleteUser(userId: string): Promise<void> {
     const worker = await pg.init();
     await worker.query("DELETE FROM users WHERE id = $1", [userId]);
+    if (autoRefresh) await refresh();
   }
 
   /**
@@ -241,6 +298,9 @@ const _useUserSync = () => {
 
     const worker = await pg.init();
     await worker.query("DELETE FROM users");
+    
+    // Clear reactive data
+    data.value = [];
 
     console.log("User data cleared on logout");
   }
@@ -257,10 +317,14 @@ const _useUserSync = () => {
     isSyncing: readonly(isSyncing),
     isUpToDate: readonly(isUpToDate),
     error: readonly(syncError),
+    
+    // Reactive data (auto-updates with autoRefresh or manual refresh)
+    data: readonly(data),
 
     // Sync control
     sync,
     stopSync,
+    refresh,
 
     // Query helpers (pages query themselves)
     getCurrentUser,
