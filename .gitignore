@@ -50,3 +50,4 @@ Thumbs.db
 # Obsidian vault (optional - if you don't want to sync docs)
 # docs/.obsidian/workspace.json
 # docs/.obsidian/plugins/
+apps/web/.data

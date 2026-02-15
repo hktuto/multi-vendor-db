@@ -8,9 +8,16 @@
     "dev": "pnpm --filter web dev",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": " pnpm -F web db:generate",
+    "db:migrate": " pnpm -F web db:migrate"
   },
-  "keywords": ["nuxt", "database", "saas", "multi-tenant"],
+  "keywords": [
+    "nuxt",
+    "database",
+    "saas",
+    "multi-tenant"
+  ],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.28.2",

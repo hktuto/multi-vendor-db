@@ -2,267 +2,408 @@
 
 This document contains operational guidelines for AI agents working on this project.
 
+---
+
 ## Project Structure
 
-This is a **monorepo** using pnpm workspaces:
-- `apps/` - Application packages
-- `packages/` - Shared library packages (including `@docs` for documentation)
-- `docs/` - **Obsidian vault** for project management and documentation
+### Vault Structure (Epic-Based)
 
-## Document Access Rule
+```
+docs/
+├── 00-meta/                   # Project-level docs
+│   ├── _index.md             # Project dashboard
+│   ├── roadmap.md            # Phases → Epics
+│   └── standards.md          # Naming conventions
+│
+├── 01-epics/                  # Epic folders
+│   ├── epics.md              # All epics overview
+│   ├── 00-foundation/        # Epic folder
+│   │   ├── foundation.md     # Epic index (status + features)
+│   │   ├── 001-project-setup.md
+│   │   ├── 002-db-schema-basic.md
+│   │   └── 003-auth-system.md
+│   ├── 01-company/
+│   │   ├── company.md
+│   │   └── 001-*.md
+│   └── ...
+│
+├── 02-tests/                  # Test plans (flat)
+├── 03-journal/                # Daily logs
+├── 04-user-guides/            # Client-facing docs
+└── 05-tech-notes/             # Technical deep-dives
+```
 
-**CRITICAL**: Always use **Obsidian MCP tools** (`obsidian_*`) to access documents in the vault.
-- ✅ `obsidian_read_note`, `obsidian_update_note`, `obsidian_global_search`
-- ❌ Never use `ReadFile` on `docs/` folder except for image file uploads
+### Key Principles
 
-## Image Handling
+| Principle | Implementation |
+|-----------|----------------|
+| **Token Efficiency** | Epic index <300 tokens, Feature <800 tokens |
+| **No Duplication** | Single source of truth per level |
+| **Easy Navigation** | Epic name files (e.g., `foundation.md`) |
+| **Clear Status** | Status at epic AND feature level |
 
-The Obsidian MCP does **NOT** support image uploads directly. For screenshots:
-1. Use Chrome MCP's `take_screenshot` to save to a temp location
-2. Use `ReadFile` (binary mode) to read the image
-3. Use standard file operations to copy into `docs/` vault folder
-4. Reference the image in Obsidian notes using `![[image.png]]` syntax
+---
 
-## Using Templates
+## Workflow Rules
 
-All templates are in `docs/00-templates/`. **Always read the template first** before creating new documents.
+### 1. Finding the Next Feature Number
 
-### How to Create a New Feature Document
+1. Go to epic folder: `01-epics/{epic-name}/`
+2. Look at `{epic-name}.md` for feature list
+3. Use next number (e.g., if last is 003, use 004)
+4. Update epic file's feature table after creating feature
 
-1. **Read the template**: `obsidian_read_note` on `00-templates/feature-template.md`
-2. **Copy content** and customize with actual feature details
-3. **Generate next feature ID**: Check `01-features/_index.md` for latest ID
-4. **Create document**: `obsidian_update_note` to `01-features/feature-{ID}-{name}.md`
-5. **Update frontmatter links**: Set `test_plan` and `user_guide` with future document names
+### 2. Creating a Feature
 
-### How to Create a Test Plan
+**File**: `01-epics/{epic-folder}/{number}-{name}.md`
 
-1. **Read the template**: `obsidian_read_note` on `00-templates/test-plan-template.md`
-2. **Copy content** and fill in test scenarios
-3. **Match feature_id**: Use same ID as the feature (e.g., FEAT-001 → TEST-001)
-4. **Link back**: Reference the feature using `[[../01-features/feature-{ID}|Feature Name]]`
-5. **Create document**: `obsidian_update_note` to `02-tests/test-{ID}-{name}.md` (same name as feature, just different prefix)
-
-### How to Create a User Guide
-
-1. **Read the template**: `obsidian_read_note` on `00-templates/user-guide-template.md`
-2. **Use Chrome MCP** to navigate the working feature
-3. **Take screenshots** with `take_screenshot` at each step
-4. **Save screenshots** to appropriate folder in `docs/`
-5. **Embed images** using `![[image.png]]` syntax
-6. **Link back**: Reference both feature and test plan documents
-7. **Create document**: `obsidian_update_note` to `04-user-guides/guide-{ID}.md`
-
-### Document Linking Conventions
-
-Always maintain bidirectional links between related documents:
-
-| Document Type | Frontmatter Links | Inline Links |
-|--------------|-------------------|--------------|
-| Feature | `test_plan: "[[test-001-project-setup]]"`<br>`user_guide: "[[guide-001-project-setup]]"` | Quick links table at top |
-| Test Plan | `feature_id: FEAT-001` | `[[../01-features/feature-001-{name}\|Feature Name]]` in Overview |
-| User Guide | `feature_id: FEAT-001` | Link to feature and test plan in Overview |
-
-**IMPORTANT**: Links use the **filename** (e.g., `test-001-{name}`, `feature-001-{name}`), NOT the feature_id code (`FEAT-001`).
-
-### Naming Conventions
-
-| Document Type | Path | Filename Pattern | Example |
-|--------------|------|------------------|---------|
-| Feature | `01-features/` | `feature-{ID}-{name}.md` | `feature-001-user-auth.md` |
-| Test Plan | `02-tests/` | `test-{ID}-{name}.md` | `test-001-project-setup.md` |
-| Journal | `03-journal/` | `{YYYY-MM-DD}.md` | `2026-02-14.md` |
-| User Guide | `04-user-guides/` | `guide-{ID}.md` | `guide-001.md` |
-
-### Feature ID Format
-
-- Pattern: `FEAT-XXX` (e.g., FEAT-001, FEAT-002)
-- Check `01-features/_index.md` to find the next available number
-- Use the same number for related test plan (TEST-001) and guide (GUIDE-001)
-
-### Feature Frontmatter (Required Fields)
-
-When creating a feature document, include these frontmatter fields:
-
+**Frontmatter**:
 ```yaml
 ---
-feature_id: FEAT-001
-epic: "Foundation"           # Epic name (e.g., Foundation, Core Data, Views)
-phase: 1                     # Phase number (e.g., 1, 2, 3)
-sprint: "Sprint 1"           # Sprint name (reference only)
-status: pending              # pending | processing | finish | hold | cancel
-priority: critical           # critical | high | medium | low
-created: 2026-02-14
-started: 
-completed: 
-test_plan: "[[test-001-project-setup]]"   # Same naming pattern as feature
-user_guide: "[[guide-001-project-setup]]"  # Same naming pattern as feature
-related: []
+epic: Foundation              # Epic name
+number: 4                     # Feature number (within epic)
+status: pending               # pending | processing | finish | hold
+created: 2026-02-15
+test_plan: "[[test-foundation-004-name]]"
+tech_notes:
+  - "[[foundation-004-topic]]"
+epic_ref: "[[foundation]]"    # Link to epic file
 tags:
+  - epic/foundation
   - status/pending
 ---
 ```
 
-**Note**: Features are stored **flat** in `01-features/` folder. Use frontmatter (`epic`, `phase`, `sprint`) to organize them, not subfolders.
+**Content** (<800 tokens):
+```markdown
+# 004: Feature Name
 
-## Feature Development Workflow
+## Overview
+One paragraph description.
+
+## Scope
+- Included
+- Not included
+
+## Key Design Decisions
+Brief bullets
+
+## Tasks
+- [ ] Task 1
+- [ ] Task 2
+
+## Implementation Log
+- Date: What was done
+```
+
+### 3. Creating an Epic
+
+**When**: New functional area with 3+ features
+
+**Folder**: `01-epics/{order}-{name}/`
+
+**Files**:
+- `{name}.md` - Epic index
+- `001-first-feature.md` - First feature
+
+**Epic Frontmatter**:
+```yaml
+---
+epic_id: EPIC-009
+epic_name: New Epic
+phase: 2
+status: pending
+created: 2026-02-15
+tags:
+  - epic/new-epic
+  - status/pending
+---
+```
+
+**Epic Content**:
+```markdown
+# Epic: New Epic
+
+Brief description.
+
+## Phase
+Phase 2
+
+## Features
+
+| # | Feature | Status | Test Plan |
+|---|---------|--------|-----------|
+| 1 | [[001-first-feature\|First Feature]] | ⏳ Pending | [[...\|Test]] |
+
+## Dependencies
+- [[../00-foundation/foundation\|Foundation]]
+
+## Next Epic
+→ [[../next-epic/epic-name\|Next Epic]]
+```
+
+**Update**: Add to `01-epics/epics.md` and `00-meta/roadmap.md`
+
+### 4. Linking Conventions
+
+```markdown
+# Within same epic
+[[001-project-setup]]
+[[002-db-schema-basic]]
+
+# To epic file
+[[foundation]]
+[[company]]
+
+# To other epic
+[[../01-company/company]]
+
+# To test
+[[../../02-tests/test-foundation-002-db-schema]]
+```
+
+---
+
+## Naming Conventions
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Epic folder | `{order}-{name}/` | `00-foundation/` |
+| Epic file | `{name}.md` | `foundation.md` |
+| Feature | `{number}-{name}.md` | `002-db-schema-basic.md` |
+| Test | `test-{epic}-{number}-{name}.md` | `test-foundation-002-db-schema.md` |
+| Tech Note | `{epic}-{number}-{topic}.md` | `foundation-002-sql.md` |
+
+---
+
+## Status Management
+
+### Epic Status
+In `{epic-name}.md` frontmatter:
+```yaml
+status: processing
+tags:
+  - epic/foundation
+  - status/processing
+```
+
+### Feature Status
+In feature file frontmatter + epic feature table:
+```yaml
+# In feature file
+status: finish
+tags:
+  - epic/foundation
+  - status/finish
+```
+
+```markdown
+# In epic file - update this too!
+| 2 | [[002-db-schema-basic\|DB Schema]] | ✅ Finish | [[...\|Test]] |
+```
+
+### Status Values
+
+| Value | Emoji | Tag |
+|-------|-------|-----|
+| pending | ⏳ | `#status/pending` |
+| processing | 🚧 | `#status/processing` |
+| finish | ✅ | `#status/finish` |
+| hold | ⏸️ | `#status/hold` |
+
+---
+
+## Development Workflow
 
 ### Phase 1: Feature Proposal
-**Before any coding**, I must:
-1. Read `00-templates/feature-template.md`
-2. Create a feature overview with:
-   - Feature description & purpose
-   - Scope and boundaries
-   - Technical approach summary
-   - Estimated effort
-3. Present to you as **checkpoint** for approval
-4. **WAIT for your approval** before proceeding to Phase 2
+1. Check epic `{name}.md` for next number
+2. Create feature overview (<500 tokens)
+3. Present for **approval**
+4. **WAIT** before proceeding
 
 ### Phase 2: Test Planning
-After approval, I must:
-1. Read `00-templates/test-plan-template.md`
-2. Create detailed test plan with:
-   - Test scenarios (happy path, edge cases, error cases)
-   - Expected inputs/outputs
-   - Test data requirements
-3. Present test plan for **approval**
-4. **WAIT for your approval** before implementing tests
+1. Create test plan in `02-tests/`
+2. Present for **approval**
+3. **WAIT** before implementing
 
-### Phase 3: Implementation & Testing
-1. Implement the feature
-2. Write tests according to approved plan
-3. Run tests and verify all pass
-4. Report test results
+### Phase 3: Implementation
+1. Implement feature
+2. Run tests
+3. Update feature status
+4. Update epic feature table
 
 ### Phase 4: Documentation
-**After successful testing**, create client-facing documentation:
-1. Read `00-templates/user-guide-template.md`
-2. Use Chrome MCP to navigate the working feature
-3. Take screenshots at each step using `take_screenshot`
-4. Create step-by-step guide in Obsidian with embedded screenshots
-5. Documentation should be in `04-user-guides/` folder
-6. Present documentation for review
+1. Create user guide in `04-user-guides/`
+2. Present for review
 
-## Obsidian Vault Structure
+---
 
-```
-docs/
-├── _index.md                    # Project dashboard
-├── AGENTS.md                    # This file (copied from root)
-├── project-specification.md     # Full project spec with phase plan
-├── 00-templates/                # 📋 ALL templates and examples
-│   ├── _index.md                # Templates index + linking demo
-│   ├── feature-template.md      # Feature document template
-│   ├── test-plan-template.md    # Test plan template
-│   ├── user-guide-template.md   # User guide template
-│   ├── journal-template.md      # Daily log template
-│   ├── example-feature-001-user-auth.md  # Demo: Complete feature example
-│   ├── example-test-001-user-auth.md     # Demo: Linked test plan
-│   └── example-guide-001-user-auth.md   # Demo: Linked user guide
-├── 01-features/                 # 📁 FLAT structure - all features here
-│   ├── _index.md                # Features dashboard (grouped by status/epic via Dataview)
-│   ├── feature-001-project-setup.md
-│   ├── feature-002-database-schema.md
-│   └── feature-XXX-{name}.md    # Individual features (no subfolders!)
-├── 02-tests/                    # 📁 Test plans (flat)
-│   ├── _index.md                # Test coverage dashboard
-│   ├── test-001.md
-│   └── test-XXX.md              # Test plans
-├── 03-journal/                  # Daily implementation logs
-│   └── YYYY-MM-DD.md
-├── 04-user-guides/              # Client-facing documentation
-│   └── guide-XXX.md
-└── 99-archive/                  # Completed features (moved here when done)
-```
-
-### Flat Structure Rule
-
-**NO subfolders in `01-features/` or `02-tests/`**. All documents are flat.
-
-Use **frontmatter** and **Dataview queries** to organize by epic/phase/sprint:
-- `epic: "Foundation"` → Groups features by epic
-- `phase: 1` → Groups by phase
-- `sprint: "Sprint 1"` → Reference only, not for folder structure
-
-The `01-features/_index.md` uses Dataview to show features grouped by status and epic.
-
-## Status Tags (Frontmatter)
-
-Use these exact status values in feature frontmatter:
-- `#status/pending` ⏳ - Not started
-- `#status/processing` 🚧 - In progress
-- `#status/finish` ✅ - Completed
-- `#status/hold` ⏸️ - On hold
-- `#status/cancel` ❌ - Cancelled
-
-## Checkpoints (ALWAYS Stop and Wait)
-
-I **MUST** pause and wait for your approval at:
-1. ✅ After feature overview, before adding to Obsidian
-2. ✅ After test plan, before implementing tests
-3. ✅ After test completion, before writing documentation
-4. ✅ After documentation draft, before finalizing
-
-## My Tools Reference
+## Tool Usage
 
 | Task | Tool |
 |------|------|
-| Read/Write vault notes | Obsidian MCP |
+| Read/Write notes | Obsidian MCP |
 | Search vault | `obsidian_global_search` |
 | Manage frontmatter | `obsidian_manage_frontmatter` |
-| Navigate web apps | Chrome MCP |
+| Navigate web | Chrome MCP |
 | Take screenshots | Chrome MCP `take_screenshot` |
-| Read image files | `ReadFile` (only for upload) |
-| Query library docs | Context 7 MCP |
+| Library docs | Context 7 MCP |
 
----
+### Always Set `overwriteIfExists: true`
 
-## Library Documentation Rule
-
-**ALWAYS use Context 7 MCP to find official library documentation** before implementing features or making technical decisions.
-
-### When to Use Context 7
-
-| Scenario | Action |
-|----------|--------|
-| New framework/library | Query Context 7 for setup, config, best practices |
-| Uncertain about API | Query Context 7 for accurate method signatures |
-| Directory structure confusion | Query Context 7 for official conventions |
-| Version differences | Query Context 7 for version-specific docs |
-
-### How to Use Context 7
-
-1. **Resolve library ID**: `resolve-library-id` with library name
-2. **Query docs**: `query-docs` with specific questions
-3. **Verify version**: Check if version-specific docs are needed
-
-### Example Workflow
-
-```
-User: "Use Nuxt 4"
-→ resolve-library-id: "nuxt" 
-→ query-docs: "Nuxt 4 directory structure app folder"
-→ Implement with correct structure
+When using `obsidian_update_note`:
+```yaml
+overwriteIfExists: true
 ```
 
-**Never assume** - always verify with official documentation via Context 7.
+---
+
+## Library Documentation
+
+**ALWAYS use Context 7 MCP** for technical questions:
+
+```
+User: "How to use X?"
+→ resolve-library-id: "library-name"
+→ query-docs: "specific question"
+→ Implement
+```
 
 ---
 
-## Using the Project Specification
+## Quick Reference
 
-The `project-specification.md` is the **single source of truth** containing:
-- All 45 features with IDs
-- Phase breakdown (MVP = Phase 1 = 17 features)
-- Sprint assignments for each feature
-- Technical specifications
+### Starting a New Feature
+```
+1. Read 01-epics/{epic}/{epic}.md
+2. Note next feature number
+3. Create 01-epics/{epic}/{number}-{name}.md
+4. Update epic file's feature table
+5. Present for approval
+```
 
-**Workflow**:
-1. Reference `project-specification.md` for what features exist and their sprint assignments
-2. When starting a feature, create the **feature document** in `01-features/`
-3. Copy sprint/phase info from spec into feature frontmatter
-4. Update feature status as work progresses
+### Creating a New Epic
+```
+1. Create folder 01-epics/{order}-{name}/
+2. Create {name}.md with status: pending
+3. Create first feature 001-{name}.md
+4. Update 01-epics/epics.md
+5. Update 00-meta/roadmap.md
+```
 
 ---
 
-**Last Updated**: 2026-02-14
+## NuxtHub Database
+
+This project uses **NuxtHub Database** with Drizzle ORM.
+
+### AI Agent Rules (CRITICAL)
+
+| Rule | Why |
+|------|-----|
+| **Never create `drizzle.config.ts`** | Generated automatically by NuxtHub |
+| **Never write manual SQL migrations** | Always use `npx nuxt db generate` |
+| **Never touch `server/db/migrations/`** | Auto-generated directory |
+| **Use PGlite for local dev** | No Docker/setup needed |
+| **Use camelCase in schema** | Auto-converted to snake_case in DB |
+| **⚠️ NEVER use `defaultRandom()` for IDs** | IDs must be app-generated for migration/sync |
+
+### Configuration
+
+- **Dialect**: `nuxt.config.ts` → `hub.db: 'postgresql'`
+- **Local Dev**: PGlite (embedded PostgreSQL)
+- **Production**: PostgreSQL via env vars
+
+### Schema Location
+
+```
+apps/web/server/db/schema.ts          # Main schema
+apps/web/server/db/schema/*.ts        # Additional schemas
+```
+
+### Schema Definition
+
+```typescript
+import { pgTable, uuid, varchar, timestamp } from 'drizzle-orm/pg-core'
+import { relations } from 'drizzle-orm'
+
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey(), // ⚠️ NO defaultRandom() - app generates ID
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  name: varchar('name', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const usersRelations = relations(users, ({ many }) => ({
+  accounts: many(userAccounts),
+}))
+```
+
+### ⚠️ ID Generation Rule (CRITICAL)
+
+**NEVER use `defaultRandom()` or database-generated IDs.**
+
+All IDs must be generated by the application using **UUIDv7**:
+
+```typescript
+// ❌ WRONG - Database generates ID
+id: uuid('id').primaryKey().defaultRandom()
+
+// ❌ WRONG - Using standard UUID v4 (not sortable)
+import { randomUUID } from 'crypto'
+id: randomUUID()
+
+// ✅ CORRECT - Application generates UUIDv7
+import { uuidv7 } from 'uuidv7'
+
+const newUser = await db.insert(users).values({
+  id: uuidv7(), // Time-based, sortable UUID
+  email: 'test@example.com',
+  name: 'Test User'
+})
+```
+
+**Why UUIDv7?**
+- **Time-based**: First 48 bits = Unix timestamp (sortable!)
+- **Better indexing**: Database indexes are more efficient
+- **Time extractable**: Can get creation time from ID
+- **Collision resistant**: 122 bits of randomness
+
+**Install:**
+```bash
+pnpm add uuidv7
+```
+
+**Note:** UUIDv7 requires package installation. Always ask before using ID libraries.
+
+### Migration Workflow
+
+```bash
+# 1. Modify schema.ts
+# 2. Generate migration (creates SQL in server/db/migrations/)
+npx nuxt db generate
+
+# 3. Apply migration
+npx nuxt db migrate
+# OR run dev (auto-applies)
+npx nuxt dev
+```
+
+### Database Access
+
+```typescript
+import { db } from '@nuxthub/db'
+
+// Query
+const users = await db.select().from(tables.users)
+
+// Insert
+const user = await db.insert(tables.users).values({
+  email: 'test@example.com',
+  name: 'Test User'
+}).returning()
+```
+
+---
+
+**Last Updated**: 2026-02-15

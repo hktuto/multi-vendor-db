@@ -1,21 +1,16 @@
+<script setup lang="ts">
+const { loggedIn } = useUserSession()
+
+// Redirect based on auth status
+if (loggedIn.value) {
+  await navigateTo('/dashboard')
+} else {
+  await navigateTo('/login')
+}
+</script>
+
 <template>
-  <div class="flex items-center justify-center min-h-screen">
-    <UCard class="max-w-md w-full mx-4">
-      <template #header>
-        <h1 class="text-2xl font-bold text-center">
-          Multi-Vendor DB
-        </h1>
-      </template>
-      
-      <p class="text-gray-600 text-center">
-        Dynamic database SaaS platform
-      </p>
-      
-      <template #footer>
-        <UButton block color="primary">
-          Get Started
-        </UButton>
-      </template>
-    </UCard>
+  <div class="min-h-screen flex items-center justify-center">
+    <ULoadingIcon />
   </div>
 </template>
