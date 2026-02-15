@@ -9,9 +9,16 @@ const { loggedIn, fetch: refreshSession } = useUserSession()
 const route = useRoute()
 const toast = useToast()
 
+// Build signup link by replacing 'login' with 'register' in current path, keeping all query params
+const signupLink = computed(() => {
+  // Replace /login with /register in the current full path
+  return route.fullPath.replace(/^\/login/, '/register')
+})
+
 // Redirect if already logged in
 if (loggedIn.value) {
-  await navigateTo('/dashboard')
+  const redirectTo = route.query.redirect as string
+  await navigateTo(redirectTo || '/dashboard')
 }
 
 const schema = z.object({
@@ -45,7 +52,9 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       })
       
       await refreshSession()
-      await navigateTo('/dashboard')
+      // Redirect to the original URL if provided, otherwise go to dashboard
+      const redirectTo = route.query.redirect as string
+      await navigateTo(redirectTo || '/dashboard')
     }
   } catch (error: any) {
     toast.add({
@@ -164,7 +173,7 @@ onMounted(() => {
     <template #footer>
       <p class="text-center text-sm text-muted">
         Don't have an account?
-        <NuxtLink to="/register" class="text-primary hover:underline">
+        <NuxtLink :to="signupLink" class="text-primary hover:underline">
           Sign up
         </NuxtLink>
       </p>

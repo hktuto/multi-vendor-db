@@ -41,11 +41,13 @@ async function acceptInvite() {
 }
 
 function redirectToSignup() {
-  router.push(`/signup?invite=${token}`)
+  // Pass both invite token and redirect back to this invite page
+  router.push(`/signup?invite=${token}&redirect=${encodeURIComponent(`/invite/${token}`)}`)
 }
 
 function redirectToLogin() {
-  router.push(`/login?invite=${token}`)
+  // Pass both invite token and redirect back to this invite page
+  router.push(`/login?invite=${token}&redirect=${encodeURIComponent(`/invite/${token}`)}`)
 }
 </script>
 

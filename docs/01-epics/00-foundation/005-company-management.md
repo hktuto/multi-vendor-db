@@ -1,10 +1,10 @@
 ---
 epic: Foundation
 number: 5
-status: processing
+status: completed
 created: 2026-02-15
-started:
-completed:
+started: 2026-02-15
+completed: 2026-02-15
 test_plan: "[[test-foundation-005-company-management]]"
 tech_notes:
   - "[[foundation-005-company-architecture]]"
@@ -13,7 +13,7 @@ epic_ref: "[[foundation]]"
 related: []
 tags:
   - epic/foundation
-  - status/processing
+  - status/completed
 ---
 
 # 005: Company Management
@@ -26,7 +26,7 @@ User management, company creation, and member invitation system. This is the mul
 |----------|-------|
 | **Epic** | Foundation |
 | **Number** | 5 |
-| **Status** | 🚧 Processing |
+| **Status** | ✅ Completed |
 
 ## Scope
 
@@ -166,6 +166,17 @@ export function useInvites(companyId: string) {
 - [ ] Add email service for invites
 
 ## Implementation Log
+
+### 2026-02-15
+- ✅ Feature completed
+- Add company CRUD API endpoints
+- Add member management (add, remove, change roles)
+- Add invite link system with public invite pages
+- Create company listing, settings, and members pages
+- Implement secondary navigation matching Nuxt UI Dashboard
+- Fix invite flow with proper redirect handling
+- Update login/register to preserve redirect params
+- Add useCompanies composable for state management
 
 ### 2026-02-15
 - Feature created

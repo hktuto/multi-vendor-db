@@ -6,10 +6,18 @@ definePageMeta({
 })
 
 const { loggedIn, fetch: refreshSession } = useUserSession()
+const route = useRoute()
 const toast = useToast()
 
+// Build login link by replacing 'register' with 'login' in current path, keeping all query params
+const loginLink = computed(() => {
+  return route.fullPath.replace(/^\/register/, '/login')
+})
+
+// Redirect if already logged in
 if (loggedIn.value) {
-  await navigateTo('/dashboard')
+  const redirectTo = route.query.redirect as string
+  await navigateTo(redirectTo || '/dashboard')
 }
 
 const schema = z.object({
@@ -54,7 +62,9 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       })
       
       await refreshSession()
-      await navigateTo('/dashboard')
+      // Redirect to the original URL if provided, otherwise go to dashboard
+      const redirectTo = route.query.redirect as string
+      await navigateTo(redirectTo || '/dashboard')
     }
   } catch (error: any) {
     toast.add({
@@ -170,7 +180,7 @@ function loginWithGoogle() {
     <template #footer>
       <p class="text-center text-sm text-muted">
         Already have an account?
-        <NuxtLink to="/login" class="text-primary hover:underline">
+        <NuxtLink :to="loginLink" class="text-primary hover:underline">
           Sign in
         </NuxtLink>
       </p>
