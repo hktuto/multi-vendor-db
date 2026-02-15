@@ -52,23 +52,23 @@ const globalError = ref<Error | null>(null);
 
 /**
  * Composable for syncing data with Electric SQL using ShapeStream pattern
- * 
+ *
  * This follows the pattern where:
  * - ShapeStream handles sync events (inserts, updates, deletes)
  * - Pages query data themselves using usePgWorker
  * - Returns subscribe/unsubscribe controls, not data
- * 
+ *
  * Usage:
  * ```ts
  * const electric = useElectricSync()
- * 
+ *
  * // Subscribe to sync events for a table
  * await electric.subscribe('users', 'http://localhost:3000/v1/shape', {
  *   onInsert: (user) => console.log('New user:', user),
  *   onUpdate: (user, old) => console.log('Updated:', user),
  *   onDelete: (id) => console.log('Deleted:', id),
  * })
- * 
+ *
  * // Later, unsubscribe
  * electric.unsubscribe('users')
  * ```
@@ -79,7 +79,7 @@ export function useElectricSync() {
 
   /**
    * Subscribe to sync events for a table
-   * 
+   *
    * @param table - Table name to sync
    * @param shapeUrl - Optional custom shape URL (defaults to ELECTRIC_URL)
    * @param callbacks - Event callbacks for insert/update/delete/error
@@ -110,7 +110,7 @@ export function useElectricSync() {
       const currentData = new Map<string, T>();
 
       // Get PGlite worker for writing sync data
-      const pg = getPgWorker();
+      const pg = await getPgWorker();
 
       // Subscribe to stream
       const unsubscribeFn = stream.subscribe(
@@ -151,9 +151,13 @@ export function useElectricSync() {
 
                 switch (headers.operation) {
                   case 'insert': {
+                    console.log("insert")
                     // Write to PGlite
                     try {
+                      const currentData = await pg.query("SELECT * FROM users")
+                      console.log("exist user", currentData)
                       const columns = Object.keys(value);
+                      console.log("data need to import", value)
                       const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
                       const sql = `INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`;
                       await pg.query(sql, Object.values(value));
@@ -239,7 +243,7 @@ export function useElectricSync() {
 
   /**
    * Unsubscribe from sync events for a table
-   * 
+   *
    * @param table - Table name to unsubscribe
    */
   function unsubscribe(table: string): void {

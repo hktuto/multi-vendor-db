@@ -81,7 +81,7 @@ async function startSync() {
         loadCurrentUser()
       },
       onUpdate: (updatedUser, oldUser) => {
-        console.log('[electric-test] Update received:', updatedUser.email)
+        console.log('[electric-test] Update received:', updatedUser)
         // Re-query data after update
         loadUsers()
         loadCurrentUser()

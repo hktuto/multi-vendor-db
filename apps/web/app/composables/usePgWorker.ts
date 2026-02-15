@@ -104,7 +104,7 @@ export const TABLE_SCHEMAS: Record<string, string> = {
  */
 const AUTO_CREATE_TABLES = [
   'users',
-  'companies', 
+  'companies',
   'company_members',
   'user_groups',
   'user_group_members',
@@ -125,8 +125,8 @@ let initPromise: Promise<PGliteWorker> | null = null;
 async function tableExists(pg: PGliteWorker, tableName: string): Promise<boolean> {
   const result = await pg.query(
     `SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_schema = 'public' 
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public'
       AND table_name = $1
     )`,
     [tableName]
@@ -139,7 +139,7 @@ async function tableExists(pg: PGliteWorker, tableName: string): Promise<boolean
  */
 async function initializeTables(pg: PGliteWorker): Promise<void> {
   console.log('[usePgWorker] Checking/creating tables...');
-  
+
   for (const tableName of AUTO_CREATE_TABLES) {
     const exists = await tableExists(pg, tableName);
     if (!exists) {
@@ -152,7 +152,7 @@ async function initializeTables(pg: PGliteWorker): Promise<void> {
       console.log(`[usePgWorker] Table exists: ${tableName}`);
     }
   }
-  
+
   console.log('[usePgWorker] Table initialization complete');
 }
 
@@ -173,7 +173,7 @@ export async function getPgWorker(): Promise<PGliteWorker> {
 
   // Create new instance
   initPromise = createPgWorker();
-  
+
   try {
     pgInstance = await initPromise;
     return pgInstance;
@@ -194,17 +194,17 @@ async function createPgWorker(): Promise<PGliteWorker> {
     {
       extensions: {
         live,
-        sync: electricSync(),
+        electric: electricSync(),
       },
     }
   );
 
   await worker.waitReady;
   console.log("[usePgWorker] PGlite Worker ready");
-  
+
   // Initialize tables after worker is ready
   await initializeTables(worker);
-  
+
   return worker;
 }
 
@@ -300,12 +300,12 @@ export function usePgWorker() {
     initialData: T[];
   }> {
     const worker = await init();
-    
+
     const liveExtension = (worker as any).live;
     if (!liveExtension) {
       throw new Error("Live extension not available");
     }
-    
+
     const liveResult = await liveExtension.query(sql, params);
 
     return {
