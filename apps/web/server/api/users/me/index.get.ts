@@ -21,7 +21,9 @@ export default defineEventHandler(async (event) => {
       avatarUrl: true,
       preferences: true,
       createdAt: true,
+      updatedAt: true,
       lastLoginAt: true,
+      isActive: true,
     },
   });
 

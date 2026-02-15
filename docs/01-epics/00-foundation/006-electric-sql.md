@@ -135,7 +135,7 @@ volumes:
 ### Packages
 
 ```bash
-pnpm add @electric-sql/react @electric-sql/pglite
+pnpm add @electric-sql/client @electric-sql/pglite
 ```
 
 ### Sync Composables
@@ -165,21 +165,18 @@ export function useWorkspaceSync(workspaceId: string) {
 
 ```typescript
 // workers/pglite.worker.ts
-import { PGlite } from '@electric-sql/pglite'
+import { PGlite } from '@electric-sql/pglite' 
+import { worker } from '@electric-sql/pglite/worker' 
 
-const db = new PGlite('idb://my-db')
 
-// Handle messages from main thread
-self.onmessage = async (event) => {
-  const { sql, params } = event.data
-  const result = await db.query(sql, params)
-  self.postMessage(result)
-}
+worker({ async init() { // Create and 
+return a PGlite instance return new PGlite() }, 
+})
 ```
 
 ## Tasks
 
-- [ ] Create `docker-compose.yml` for PostgreSQL + Electric SQL
+- [x] Create `docker-compose.yml` for PostgreSQL + Electric SQL
 - [ ] Install Electric SQL packages
 - [ ] Setup Electric SQL sync service
 - [ ] Configure PGlite client database
