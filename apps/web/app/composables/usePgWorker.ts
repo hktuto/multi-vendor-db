@@ -3,11 +3,154 @@ import { electricSync } from "@electric-sql/pglite-sync";
 import { PGliteWorker } from "@electric-sql/pglite/worker";
 
 /**
+ * Table schema definitions for PGlite client database
+ * These mirror the server database schema for synced tables
+ */
+export const TABLE_SCHEMAS: Record<string, string> = {
+  users: `
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT,
+      avatar_url TEXT,
+      preferences JSONB DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_login_at TEXT,
+      is_active BOOLEAN DEFAULT true
+    )
+  `,
+  companies: `
+    CREATE TABLE IF NOT EXISTS companies (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      owner_id TEXT NOT NULL,
+      settings JSONB DEFAULT '{"timezone":"UTC","dateFormat":"YYYY-MM-DD","defaultLanguage":"en","theme":{}}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    )
+  `,
+  company_members: `
+    CREATE TABLE IF NOT EXISTS company_members (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at TEXT NOT NULL,
+      invited_by TEXT,
+      UNIQUE(company_id, user_id)
+    )
+  `,
+  user_groups: `
+    CREATE TABLE IF NOT EXISTS user_groups (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `,
+  user_group_members: `
+    CREATE TABLE IF NOT EXISTS user_group_members (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      group_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      added_by TEXT NOT NULL,
+      added_at TEXT NOT NULL,
+      UNIQUE(group_id, user_id)
+    )
+  `,
+  workspaces: `
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      color TEXT,
+      menu JSONB DEFAULT '[]',
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    )
+  `,
+  folders: `
+    CREATE TABLE IF NOT EXISTS folders (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      color TEXT,
+      settings JSONB DEFAULT '{}',
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    )
+  `,
+};
+
+/**
+ * Tables to auto-create on worker initialization
+ */
+const AUTO_CREATE_TABLES = [
+  'users',
+  'companies', 
+  'company_members',
+  'user_groups',
+  'user_group_members',
+  'workspaces',
+  'folders'
+];
+
+/**
  * Singleton PGlite instance
  * Shared across all composables
  */
 let pgInstance: PGliteWorker | null = null;
 let initPromise: Promise<PGliteWorker> | null = null;
+
+/**
+ * Check if a table exists in PGlite
+ */
+async function tableExists(pg: PGliteWorker, tableName: string): Promise<boolean> {
+  const result = await pg.query(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name=$1`,
+    [tableName]
+  );
+  return result.rows.length > 0;
+}
+
+/**
+ * Initialize all required tables
+ */
+async function initializeTables(pg: PGliteWorker): Promise<void> {
+  console.log('[usePgWorker] Checking/creating tables...');
+  
+  for (const tableName of AUTO_CREATE_TABLES) {
+    const exists = await tableExists(pg, tableName);
+    if (!exists) {
+      const schema = TABLE_SCHEMAS[tableName];
+      if (schema) {
+        await pg.exec(schema);
+        console.log(`[usePgWorker] Created table: ${tableName}`);
+      }
+    } else {
+      console.log(`[usePgWorker] Table exists: ${tableName}`);
+    }
+  }
+  
+  console.log('[usePgWorker] Table initialization complete');
+}
 
 /**
  * Get or create PGlite Worker instance
@@ -26,7 +169,7 @@ export async function getPgWorker(): Promise<PGliteWorker> {
 
   // Create new instance
   initPromise = createPgWorker();
-
+  
   try {
     pgInstance = await initPromise;
     return pgInstance;
@@ -54,7 +197,10 @@ async function createPgWorker(): Promise<PGliteWorker> {
 
   await worker.waitReady;
   console.log("[usePgWorker] PGlite Worker ready");
-
+  
+  // Initialize tables after worker is ready
+  await initializeTables(worker);
+  
   return worker;
 }
 
@@ -141,9 +287,6 @@ export function usePgWorker() {
 
   /**
    * Create a live query that updates automatically
-   * Returns an observable that pages can subscribe to
-   * 
-   * Note: This uses the live extension from @electric-sql/pglite/live
    */
   async function liveQuery<T = any>(
     sql: string,
@@ -154,10 +297,9 @@ export function usePgWorker() {
   }> {
     const worker = await init();
     
-    // Access live through the extensions
     const liveExtension = (worker as any).live;
     if (!liveExtension) {
-      throw new Error("Live extension not available. Make sure the worker is configured with the live extension.");
+      throw new Error("Live extension not available");
     }
     
     const liveResult = await liveExtension.query(sql, params);

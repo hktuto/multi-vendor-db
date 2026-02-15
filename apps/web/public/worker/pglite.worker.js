@@ -3,8 +3,11 @@ import { worker } from "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/w
 
 console.log("worker start load")
 worker({
-  async init() {
+  async init(options) {
     // Create and return a PGlite instance
-    return new PGlite("idb://electric-sql-poc")
+    return new PGlite({
+      dataDir: options.dataDir,
+      extensions: options.extensions
+    })
   }
 })

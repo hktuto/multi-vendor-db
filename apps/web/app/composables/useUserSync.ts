@@ -18,13 +18,13 @@ export interface SyncedUser {
 
 /**
  * User sync composable - manages user data sync using ShapeStream pattern
- * 
+ *
  * This composable:
  * - Uses useElectricSync for sync events (ShapeStream)
  * - Uses usePgWorker for data queries
  * - Does NOT manage data arrays - pages query themselves
  * - Provides helpers for user-specific operations
- * 
+ *
  * Uses createSharedComposable for singleton pattern
  */
 const _useUserSync = () => {
@@ -58,7 +58,7 @@ const _useUserSync = () => {
 
   /**
    * Start syncing user data
-   * 
+   *
    * @param callbacks - Optional event callbacks
    * @returns Unsubscribe function
    */
@@ -123,6 +123,7 @@ const _useUserSync = () => {
       "SELECT * FROM users WHERE id = $1",
       [userId]
     );
+    console.log("getCurrentUser",result, userId)
     return result.rows[0] || null;
   }
 
@@ -155,8 +156,8 @@ const _useUserSync = () => {
   async function searchUsers(query: string): Promise<SyncedUser[]> {
     const worker = await pg.init();
     const result = await worker.query<SyncedUser>(
-      `SELECT * FROM users 
-       WHERE name ILIKE $1 OR email ILIKE $1 
+      `SELECT * FROM users
+       WHERE name ILIKE $1 OR email ILIKE $1
        ORDER BY created_at DESC`,
       [`%${query}%`]
     );

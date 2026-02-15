@@ -65,7 +65,7 @@ async function loadCurrentUser() {
  */
 async function startSync() {
   if (!loggedIn.value) return
-  
+
   try {
     // Subscribe to sync events
     unsubscribeSync = await userSync.sync({
@@ -154,7 +154,7 @@ function stopSync() {
  */
 async function updateProfile() {
   if (!newName.value || !user.value?.id) return
-  
+
   isLoading.value = true
   try {
     await userSync.updateUser(user.value.id, { name: newName.value })
@@ -280,23 +280,23 @@ const debugInfo = computed(() => ({
 
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div class="flex items-center gap-2">
-            <span 
+            <span
               class="w-3 h-3 rounded-full"
               :class="pg.isReady.value ? 'bg-green-500' : 'bg-red-500'"
             />
             <span>PGlite: {{ pg.isReady.value ? 'Ready' : 'Loading...' }}</span>
           </div>
-          
+
           <div class="flex items-center gap-2">
-            <span 
+            <span
               class="w-3 h-3 rounded-full"
               :class="userSync.isSyncing.value ? 'bg-yellow-500 animate-pulse' : userSync.isUpToDate.value ? 'bg-green-500' : 'bg-gray-400'"
             />
             <span>Sync: {{ userSync.isUpToDate.value ? 'Up to date' : userSync.isSyncing.value ? 'Syncing...' : 'Idle' }}</span>
           </div>
-          
+
           <div class="flex items-center gap-2">
-            <span 
+            <span
               class="w-3 h-3 rounded-full"
               :class="loggedIn ? 'bg-green-500' : 'bg-red-500'"
             />
@@ -304,7 +304,7 @@ const debugInfo = computed(() => ({
           </div>
 
           <div class="flex items-center gap-2">
-            <span 
+            <span
               class="w-3 h-3 rounded-full"
               :class="userCount > 0 ? 'bg-blue-500' : 'bg-gray-400'"
             />
@@ -333,19 +333,19 @@ const debugInfo = computed(() => ({
               <p class="text-sm text-gray-500">{{ currentUser.email }}</p>
             </div>
           </div>
-          
+
           <div class="mt-4 pt-4 border-t text-sm text-gray-600 dark:text-gray-400 space-y-1">
             <p><span class="font-medium">ID:</span> {{ currentUser.id }}</p>
-            <p><span class="font-medium">Created:</u003e {{ new Date(currentUser.created_at).toLocaleString() }}</p>
-            <p><span class="font-medium">Updated:</u003e {{ new Date(currentUser.updated_at).toLocaleString() }}</p>
+            <p><span class="font-medium">Created:</span> {{ new Date(currentUser.created_at).toLocaleString() }}</p>
+            <p><span class="font-medium">Updated:</span> {{ new Date(currentUser.updated_at).toLocaleString() }}</p>
           </div>
         </div>
-        
+
         <div v-else-if="isDataLoading" class="text-center py-8 text-gray-500">
           <UIcon name="i-lucide-loader-2" class="animate-spin text-2xl mb-2" />
           <p>Loading user data...</p>
         </div>
-        
+
         <div v-else class="text-center py-8 text-gray-500">
           <UIcon name="i-lucide-user-x" class="text-2xl mb-2" />
           <p>No user data. Click "Reload Users" to query.</p>
@@ -444,13 +444,13 @@ const debugInfo = computed(() => ({
                 <p class="text-xs text-gray-500">{{ u.email }}</p>
               </div>
             </div>
-            
+
             <p class="text-xs text-gray-400">
               {{ new Date(u.updated_at).toLocaleDateString() }}
             </p>
           </div>
         </div>
-        
+
         <div v-else class="text-center py-8 text-gray-500">
           <UIcon name="i-lucide-users" class="text-2xl mb-2" />
           <p>No users in local DB yet.</p>
@@ -483,7 +483,7 @@ const debugInfo = computed(() => ({
 
         <div class="prose dark:prose-invert max-w-none text-sm">
           <p>This page demonstrates the new Electric SQL ShapeStream pattern:</p>
-          
+
           <ul class="list-disc pl-5 space-y-1">
             <li><strong>useElectricSync</strong> - Subscribes to sync events (onInsert, onUpdate, onDelete, onUpToDate, onError)</li>
             <li><strong>usePgWorker</strong> - Pages query data themselves using query(), queryOne(), or liveQuery()</li>
