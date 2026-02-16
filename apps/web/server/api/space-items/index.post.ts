@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
-import { db } from "../../db";
-import { spaceItems, spaceMembers } from "../../db/schema";
-import { requireAuth } from "../utils/auth";
+import { db } from "@nuxthub/db";
+import { spaceItems, spaceMembers } from "@nuxthub/db/schema";
+import { requireAuth } from "#server/utils/auth";
 import { generateId } from "../utils/id";
 
 const createItemSchema = z.object({
@@ -30,10 +30,7 @@ export default defineEventHandler(async (event) => {
   // Check membership and permission
   const member = await db.query.spaceMembers.findFirst({
     where: (members, { eq, and }) =>
-      and(
-        eq(members.spaceId, input.spaceId),
-        eq(members.userId, user.id),
-      ),
+      and(eq(members.spaceId, input.spaceId), eq(members.userId, user.id)),
   });
 
   if (!member) {

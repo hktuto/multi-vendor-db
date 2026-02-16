@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { db } from "../../db";
-import { spaces, spaceMembers } from "../../db/schema";
+import { db } from "@nuxthub/db";
+import { spaces, spaceMembers } from "@nuxthub/db/schema";
 import { requireAuth } from "../utils/auth";
 import { generateId } from "../utils/id";
 
@@ -26,10 +26,7 @@ export default defineEventHandler(async (event) => {
   // Verify user is member of the company
   const companyMember = await db.query.companyMembers.findFirst({
     where: (members, { eq, and }) =>
-      and(
-        eq(members.companyId, input.companyId),
-        eq(members.userId, user.id),
-      ),
+      and(eq(members.companyId, input.companyId), eq(members.userId, user.id)),
   });
 
   if (!companyMember) {

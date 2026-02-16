@@ -1,6 +1,6 @@
 import { eq, and, isNull } from "drizzle-orm";
-import { db } from "../../../db";
-import { spaces, spaceMembers } from "../../../db/schema";
+import { db } from "@nuxthub/db";
+import { spaces, spaceMembers } from "@nuxthub/db/schema";
 import { requireAuth } from "../../utils/auth";
 
 /**
