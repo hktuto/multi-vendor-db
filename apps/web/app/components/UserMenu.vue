@@ -5,8 +5,8 @@ defineProps<{
   collapsed?: boolean
 }>()
 
-const { user, clear } = useUserSession()
-const { logout: electricLogout } = useUserSync()
+const { user: sessionUser, clear } = useUserSession()
+const { logout: electricLogout, data: syncedUsers } = useUserSync()
 const colorMode = useColorMode()
 const appConfig = useAppConfig()
 const router = useRouter()
@@ -14,11 +14,20 @@ const router = useRouter()
 const colors = ['red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose']
 const neutrals = ['slate', 'gray', 'zinc', 'neutral', 'stone']
 
-// Build user info from session
+// Start syncing user data on mount
+onMounted(async () => {
+  const userSync = useUserSync()
+  await userSync.sync()
+})
+
+// Use synced user data if available, fallback to session
+const user = computed(() => syncedUsers.value[0] || sessionUser.value)
+
+// Build user info from synced or session data
 const userInfo = computed(() => ({
   name: user.value?.name || 'User',
   avatar: {
-    src: user.value?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.value?.name || 'User')}&background=random`,
+    src: user.value?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.value?.name || 'User')}&background=random`,
     alt: user.value?.name || 'User'
   }
 }))

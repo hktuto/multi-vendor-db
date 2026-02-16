@@ -3,7 +3,16 @@ definePageMeta({
   middleware: ['auth']
 })
 
-const { user } = useUserSession()
+const { user: sessionUser } = useUserSession()
+const userSync = useUserSync()
+
+// Start syncing user data from Electric
+onMounted(async () => {
+  await userSync.sync()
+})
+
+// Use synced user data if available, fallback to session
+const user = computed(() => userSync.data.value[0] || sessionUser.value)
 </script>
 
 <template>
