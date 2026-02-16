@@ -106,9 +106,12 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
   /**
    * Start syncing user data
    *
-   * Uses hybrid approach:
+   * Uses useElectricSync for real-time sync:
    * 1. Load existing data from DB first (for immediate UI display)
-   * 2. Then start syncShapeToTable for real-time updates
+   * 2. Then subscribe to Electric for real-time updates
+   *
+   * Multiple components can call sync() with the same shapeKey - 
+   * they will share the underlying ShapeStream subscription.
    *
    * @param callbacks - Optional event callbacks
    * @returns Unsubscribe function
@@ -135,6 +138,8 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
     }
 
     // STEP 2: Start sync for real-time updates
+    // This subscribes to the shared shape - if another component already
+    // subscribed to 'users_sync', this will reuse the existing subscription
     const unsubscribe = await electric.subscribe<SyncedUser>({
       table: "users",
       shapeUrl: `${ELECTRIC_URL}/v1/shape`,
