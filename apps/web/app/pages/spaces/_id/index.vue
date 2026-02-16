@@ -18,6 +18,7 @@ const {
   isLoading: pending,
   updateSpace,
   archiveSpace,
+  queryMembers,
 } = useSpaces();
 
 // Switch to this space if not current
@@ -34,10 +35,28 @@ const space = computed(
 const { getMySpaceRole } = useSpaces();
 const myRole = ref<{ role: string | null; isAdmin: boolean }>({ role: null, isAdmin: false });
 
+// Space members for avatar group
+const members = ref<any[]>([]);
+const isLoadingMembers = ref(false);
+
+async function loadMembers() {
+  isLoadingMembers.value = true;
+  try {
+    members.value = await queryMembers(spaceId);
+  } finally {
+    isLoadingMembers.value = false;
+  }
+}
+
 onMounted(async () => {
   const roleInfo = await getMySpaceRole(spaceId);
   myRole.value = roleInfo;
+  await loadMembers();
 });
+
+// Get top members for avatar group (limit to 4)
+const topMembers = computed(() => members.value.slice(0, 4));
+const remainingCount = computed(() => Math.max(0, members.value.length - 4));
 
 const canManage = computed(() => myRole.value.isAdmin);
 
@@ -211,6 +230,30 @@ const iconOptions = [
             icon="i-lucide-arrow-left"
             to="/spaces"
           />
+        </template>
+
+        <template #right>
+          <!-- Members Avatar Group -->
+          <div class="flex items-center gap-2">
+            <UAvatarGroup v-if="members.length > 0" :max="4" size="sm">
+              <UAvatar
+                v-for="member in topMembers"
+                :key="member.id"
+                :src="member.user?.avatar_url"
+                :alt="member.user?.name"
+                size="sm"
+              />
+            </UAvatarGroup>
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              icon="i-lucide-users"
+              :to="`/spaces/${spaceId}/members`"
+            >
+              {{ members.length }} members
+            </UButton>
+          </div>
         </template>
       </UDashboardNavbar>
 
