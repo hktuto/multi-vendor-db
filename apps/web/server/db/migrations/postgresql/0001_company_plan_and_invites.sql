@@ -4,30 +4,18 @@
 -- 1. Add plan column to companies table
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan VARCHAR(24) NOT NULL DEFAULT 'basic';
 
--- 2. Create new invites table (replaces invite_links)
-CREATE TABLE IF NOT EXISTS invites (
-    id UUID PRIMARY KEY,
-    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    email VARCHAR(255) NOT NULL,
-    invited_by UUID NOT NULL REFERENCES users(id),
-    token VARCHAR(255) NOT NULL UNIQUE,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'member')),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired', 'cancelled')),
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
-    accepted_at TIMESTAMP WITH TIME ZONE,
-    accepted_by UUID REFERENCES users(id),
-    UNIQUE(company_id, email)
-);
+-- 2. Update invite_links table - add email, remove maxUses/usedCount
+-- First add new columns
+ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 
--- Create index for faster queries
-CREATE INDEX IF NOT EXISTS idx_invites_company_id ON invites(company_id);
-CREATE INDEX IF NOT EXISTS idx_invites_status ON invites(status);
-CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
+-- Add unique constraint on company_id + email (for one invite per person)
+-- Note: This will fail if there are duplicate emails, handle manually if needed
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_invite_links_company_email ON invite_links(company_id, email) WHERE email IS NOT NULL;
 
--- 3. Migrate data from invite_links to invites (if exists)
--- Note: This is a one-way migration. Old invite_links data will be preserved.
+-- 3. Remove unused columns (optional - keep for backwards compatibility or drop)
+-- ALTER TABLE invite_links DROP COLUMN IF EXISTS max_uses;
+-- ALTER TABLE invite_links DROP COLUMN IF EXISTS used_count;
 
 -- 4. Add comment
-COMMENT ON TABLE invites IS 'One invite per person - replaces invite_links';
 COMMENT ON COLUMN companies.plan IS 'SaaS plan: basic, pro, enterprise';
+COMMENT ON COLUMN invite_links.email IS 'Email of invited person (one invite per email per company)';

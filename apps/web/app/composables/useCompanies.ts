@@ -31,20 +31,20 @@ export interface SyncedCompanyMember {
 }
 
 /**
- * Invite data structure - one invite per person
+ * Invite link data structure - one invite per email
  */
-export interface SyncedInvite {
+export interface SyncedInviteLinkLink {
   id: string;
   company_id: string;
-  email: string;        // Unique per company - one invite per person
-  invited_by: string;   // User ID who sent the invite
+  created_by: string;
+  email: string | null;  // NEW: One invite per email
+  token: string;
   role: 'admin' | 'member';
-  token: string;        // Unique token for accept link
-  status: 'pending' | 'accepted' | 'expired' | 'cancelled';
-  expires_at: string;
+  expires_at: string | null;
   created_at: string;
-  accepted_at: string | null;
-  accepted_by: string | null;  // User ID who accepted (for tracking)
+  used_at: string | null;
+  used_by: string | null;
+  is_active: boolean;
 }
 
 /**
@@ -93,10 +93,10 @@ const _useCompanies = () => {
 
   // Data - only companies are global state
   const allCompanies = useState<SyncedCompany[]>("companies-all", () => []);
-  // Members and invites are queried on-demand, not stored in global state
+  // Members and invite links are queried on-demand, not stored in global state
   // But we track if sync is active for these tables
   const membersSyncActive = useState("companies-members-sync", () => false);
-  const invitesSyncActive = useState("companies-invites-sync", () => false);
+  const inviteLinksSyncActive = useState("companies-invite-links-sync", () => false);
 
   // Status
   const isLoading = useState("companies-loading", () => false);
@@ -106,11 +106,11 @@ const _useCompanies = () => {
   // Unsubscribe functions
   let unsubscribeCompanies: (() => void) | null = null;
   let unsubscribeMembers: (() => void) | null = null;
-  let unsubscribeInvites: (() => void) | null = null;
+  let unsubscribeInviteLinks: (() => void) | null = null;
 
   // Change callbacks (pages can register to receive change notifications)
   const membersChangeCallbacks = new Set<() => void>();
-  const invitesChangeCallbacks = new Set<() => void>();
+  const inviteLinkChangeCallbacks = new Set<() => void>();
 
   // Computed
   const currentCompany = computed(() => {
@@ -129,11 +129,11 @@ const _useCompanies = () => {
   }
 
   /**
-   * Register a callback for invites changes
+   * Register a callback for invite links changes
    */
-  function onInvitesChange(callback: () => void): () => void {
-    invitesChangeCallbacks.add(callback);
-    return () => invitesChangeCallbacks.delete(callback);
+  function onInviteLinksChange(callback: () => void): () => void {
+    inviteLinkChangeCallbacks.add(callback);
+    return () => inviteLinkChangeCallbacks.delete(callback);
   }
 
   /**
@@ -143,8 +143,8 @@ const _useCompanies = () => {
     membersChangeCallbacks.forEach((cb) => cb());
   }
 
-  function notifyInvitesChange() {
-    invitesChangeCallbacks.forEach((cb) => cb());
+  function notifyInviteLinksChange() {
+    inviteLinkChangeCallbacks.forEach((cb) => cb());
   }
 
   /**
@@ -163,26 +163,26 @@ const _useCompanies = () => {
   }
 
   /**
-   * Query invites for a specific company (on-demand)
+   * Query invite links for a specific company (on-demand)
    */
-  async function queryInvites(
+  async function queryInviteLinks(
     companyId?: string,
-    status?: "pending" | "accepted" | "expired" | "cancelled"
-  ): Promise<SyncedInvite[]> {
+    isActive?: boolean
+  ): Promise<SyncedInviteLink[]> {
     const cid = companyId || currentCompanyId.value;
     if (!cid) return [];
 
     const worker = await pg.init();
-    let sql = "SELECT * FROM invites WHERE company_id = $1";
+    let sql = "SELECT * FROM invite_links WHERE company_id = $1";
     const params: any[] = [cid];
 
-    if (status) {
-      sql += " AND status = $2";
-      params.push(status);
+    if (isActive !== undefined) {
+      sql += " AND is_active = $2";
+      params.push(isActive);
     }
     sql += " ORDER BY created_at DESC";
 
-    const result = await worker.query<SyncedInvite>(sql, params);
+    const result = await worker.query<SyncedInviteLink>(sql, params);
     return result.rows;
   }
 
@@ -247,7 +247,7 @@ const _useCompanies = () => {
    */
   async function startSync(options?: {
     syncMembers?: boolean;
-    syncInvites?: boolean;
+    syncInviteLinks?: boolean;
   }): Promise<void> {
     if (isLoading.value) return;
 
@@ -310,14 +310,14 @@ const _useCompanies = () => {
       }
 
       // Optionally sync invites (no state, just callbacks)
-      if (options?.syncInvites !== false) {
-        invitesSyncActive.value = true;
-        unsubscribeInvites = await electric.subscribe<SyncedInvite>({
-          table: "invites",
+      if (options?.syncInviteLinks !== false) {
+        inviteLinksSyncActive.value = true;
+        unsubscribeInviteLinks = await electric.subscribe<SyncedInviteLink>({
+          table: "invite_links",
           callbacks: {
-            onInsert: notifyInvitesChange,
-            onUpdate: notifyInvitesChange,
-            onDelete: notifyInvitesChange,
+            onInsert: notifyInviteLinksChange,
+            onUpdate: notifyInviteLinksChange,
+            onDelete: notifyInviteLinksChange,
           },
         });
       }
@@ -333,17 +333,17 @@ const _useCompanies = () => {
   function stopSync() {
     unsubscribeCompanies?.();
     unsubscribeMembers?.();
-    unsubscribeInvites?.();
+    unsubscribeInviteLinks?.();
     unsubscribeCompanies = null;
     unsubscribeMembers = null;
-    unsubscribeInvites = null;
+    unsubscribeInviteLinks = null;
     membersSyncActive.value = false;
-    invitesSyncActive.value = false;
+    inviteLinksSyncActive.value = false;
     isLoading.value = false;
     isUpToDate.value = false;
     // Clear callbacks
     membersChangeCallbacks.clear();
-    invitesChangeCallbacks.clear();
+    inviteLinkChangeCallbacks.clear();
   }
 
   // Auto start sync on mount (only if in client)
@@ -365,20 +365,20 @@ const _useCompanies = () => {
     isUpToDate: readonly(isUpToDate),
     error: readonly(error),
     membersSyncActive: readonly(membersSyncActive),
-    invitesSyncActive: readonly(invitesSyncActive),
+    inviteLinksSyncActive: readonly(inviteLinksSyncActive),
 
     // Actions
     switchCompany,
     refreshCompanies,
     queryMembers,
-    queryInvites,
+    queryInviteLinks,
     checkRole,
     startSync,
     stopSync,
 
     // Change callbacks (pages register to receive notifications)
     onMembersChange,
-    onInvitesChange,
+    onInviteLinksChange,
   };
 };
 
@@ -448,9 +448,9 @@ export function useCompanyQueries(companyId?: string) {
 
   // Local state for queries
   const members = ref<SyncedCompanyMember[]>([]);
-  const invites = ref<SyncedInvite[]>([]);
+  const inviteLinks = ref<SyncedInviteLink[]>([]);
   const isLoadingMembers = ref(false);
-  const isLoadingInvites = ref(false);
+  const isLoadingInviteLinks = ref(false);
 
   /**
    * Load members for current company
@@ -463,19 +463,19 @@ export function useCompanyQueries(companyId?: string) {
   }
 
   /**
-   * Load invites for current company
+   * Load invite links for current company
    */
-  async function loadInvites(status?: 'pending' | 'accepted' | 'expired' | 'cancelled') {
+  async function loadInviteLinks(isActive?: boolean) {
     if (!targetCompanyId.value) return;
-    isLoadingInvites.value = true;
-    invites.value = await companies.queryInvites(targetCompanyId.value, status);
-    isLoadingInvites.value = false;
+    isLoadingInviteLinks.value = true;
+    inviteLinks.value = await companies.queryInviteLinks(targetCompanyId.value, isActive);
+    isLoadingInviteLinks.value = false;
   }
 
   // Auto-load when company changes
   watch(targetCompanyId, () => {
     loadMembers();
-    loadInvites('pending');
+    loadInviteLinks(true);
   }, { immediate: true });
 
   // Listen for changes and reload
@@ -483,23 +483,23 @@ export function useCompanyQueries(companyId?: string) {
     const unsubMembers = companies.onMembersChange(() => {
       loadMembers();
     });
-    const unsubInvites = companies.onInvitesChange(() => {
-      loadInvites('pending');
+    const unsubInviteLinks = companies.onInviteLinksChange(() => {
+      loadInviteLinks(true);
     });
 
     onUnmounted(() => {
       unsubMembers();
-      unsubInvites();
+      unsubInviteLinks();
     });
   });
 
   return {
     companyId: targetCompanyId,
     members: readonly(members),
-    invites: readonly(invites),
+    inviteLinks: readonly(inviteLinks),
     isLoadingMembers: readonly(isLoadingMembers),
-    isLoadingInvites: readonly(isLoadingInvites),
+    isLoadingInviteLinks: readonly(isLoadingInviteLinks),
     loadMembers,
-    loadInvites,
+    loadInviteLinks,
   };
 }

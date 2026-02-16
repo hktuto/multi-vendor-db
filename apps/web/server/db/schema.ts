@@ -95,20 +95,21 @@ export const userGroupMembers = pgTable('user_group_members', {
   unique('unique_group_member').on(table.groupId, table.userId),
 ])
 
-export const invites = pgTable('invites', {
+export const inviteLinks = pgTable('invite_links', {
   id: uuid('id').primaryKey(), // Application-generated UUID
   companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  email: varchar('email', { length: 255 }).notNull(),
-  invitedBy: uuid('invited_by').notNull().references(() => users.id),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  email: varchar('email', { length: 255 }), // NEW: One invite per email per company
   token: varchar('token', { length: 255 }).notNull().unique(),
   role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'member'>(),
-  status: varchar('status', { length: 20 }).notNull().$type<'pending' | 'accepted' | 'expired' | 'cancelled'>().default('pending'),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  // REMOVED: maxUses, usedCount - one invite per person model
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
-  acceptedBy: uuid('accepted_by').references(() => users.id),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  usedBy: uuid('used_by').references(() => users.id),
+  isActive: boolean('is_active').default(true).notNull(),
 }, (table) => [
-  unique('unique_company_invite_email').on(table.companyId, table.email),
+  // unique('unique_company_invite_email').on(table.companyId, table.email), // Optional: enforce one invite per email
 ])
 
 // ============================================

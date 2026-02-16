@@ -98,20 +98,19 @@ export const TABLE_SCHEMAS: Record<string, string> = {
       deleted_at TEXT
     )
   `,
-  invites: `
-    CREATE TABLE IF NOT EXISTS invites (
+  invite_links: `
+    CREATE TABLE IF NOT EXISTS invite_links (
       id TEXT PRIMARY KEY,
       company_id TEXT NOT NULL,
-      email TEXT NOT NULL,
-      invited_by TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      email TEXT,
       token TEXT NOT NULL UNIQUE,
       role TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      expires_at TEXT NOT NULL,
+      expires_at TEXT,
       created_at TEXT NOT NULL,
-      accepted_at TEXT,
-      accepted_by TEXT,
-      UNIQUE(company_id, email)
+      used_at TEXT,
+      used_by TEXT,
+      is_active BOOLEAN DEFAULT true
     )
   `,
 };
@@ -127,7 +126,7 @@ const AUTO_CREATE_TABLES = [
   "user_group_members",
   "workspaces",
   "folders",
-  "invites"
+  "invite_links"
 ];];
 
 /**
