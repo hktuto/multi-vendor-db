@@ -1,9 +1,7 @@
 import { z } from "zod";
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull } from "drizzle-orm";
-import { db } from "@nuxthub/db";
-import { spaceItems, spaceMembers } from "@nuxthub/db/schema";
-import { requireAuth } from "#server/utils/auth";
-import { generateId } from "../utils/id";
+import { uuidv7 } from "uuidv7";
 
 const createItemSchema = z.object({
   spaceId: z.string().uuid(),
@@ -22,7 +20,14 @@ const createItemSchema = z.object({
  * Create a new space item
  */
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event);
+  const session = await getUserSession(event);
+
+  if (!session.user?.id) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: "Unauthorized",
+    });
+  }
 
   const body = await readBody(event);
   const input = createItemSchema.parse(body);
@@ -30,7 +35,10 @@ export default defineEventHandler(async (event) => {
   // Check membership and permission
   const member = await db.query.spaceMembers.findFirst({
     where: (members, { eq, and }) =>
-      and(eq(members.spaceId, input.spaceId), eq(members.userId, user.id)),
+      and(
+        eq(members.spaceId, input.spaceId),
+        eq(members.userId, session.user.id),
+      ),
   });
 
   if (!member) {
@@ -71,9 +79,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const [item] = await db
-    .insert(spaceItems)
+    .insert(schema.spaceItems)
     .values({
-      id: generateId(),
+      id: uuidv7(),
       spaceId: input.spaceId,
       parentId: input.parentId ?? null,
       type: input.type,
@@ -83,7 +91,7 @@ export default defineEventHandler(async (event) => {
       color: input.color ?? null,
       orderIndex: input.orderIndex ?? 0,
       config: input.config ?? {},
-      createdBy: user.id,
+      createdBy: session.user.id,
       createdAt: now,
       updatedAt: now,
     })

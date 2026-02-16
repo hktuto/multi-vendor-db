@@ -1,18 +1,23 @@
-import { z } from "zod";
-import { db } from "../../db";
-import { spaces, spaceMembers } from "../../db/schema";
-import { requireAuth } from "../utils/auth";
+import { db, schema } from "@nuxthub/db";
+import { inArray, isNull, eq } from "drizzle-orm";
 
 /**
  * GET /api/spaces
  * List all spaces the user has access to
  */
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event);
+  const session = await getUserSession(event);
+
+  if (!session.user?.id) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: "Unauthorized",
+    });
+  }
 
   // Get all companies the user is a member of
   const userCompanies = await db.query.companyMembers.findMany({
-    where: (members, { eq }) => eq(members.userId, user.id),
+    where: (members, { eq }) => eq(members.userId, session.user.id),
     columns: { companyId: true },
   });
 

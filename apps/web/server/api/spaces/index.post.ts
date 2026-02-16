@@ -1,8 +1,7 @@
 import { z } from "zod";
-import { db } from "@nuxthub/db";
-import { spaces, spaceMembers } from "@nuxthub/db/schema";
-import { requireAuth } from "../utils/auth";
-import { generateId } from "../utils/id";
+import { db, schema } from "@nuxthub/db";
+import { eq, and } from "drizzle-orm";
+import { uuidv7 } from "uuidv7";
 
 const createSpaceSchema = z.object({
   companyId: z.string().uuid(),
@@ -18,7 +17,14 @@ const createSpaceSchema = z.object({
  * Create a new space
  */
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event);
+  const session = await getUserSession(event);
+
+  if (!session.user?.id) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: "Unauthorized",
+    });
+  }
 
   const body = await readBody(event);
   const input = createSpaceSchema.parse(body);
@@ -26,7 +32,10 @@ export default defineEventHandler(async (event) => {
   // Verify user is member of the company
   const companyMember = await db.query.companyMembers.findFirst({
     where: (members, { eq, and }) =>
-      and(eq(members.companyId, input.companyId), eq(members.userId, user.id)),
+      and(
+        eq(members.companyId, input.companyId),
+        eq(members.userId, session.user.id),
+      ),
   });
 
   if (!companyMember) {
@@ -37,11 +46,11 @@ export default defineEventHandler(async (event) => {
   }
 
   const now = new Date();
-  const spaceId = generateId();
+  const spaceId = uuidv7();
 
   // Create space
-  const [space] = await db
-    .insert(spaces)
+  const [newSpace] = await db
+    .insert(schema.spaces)
     .values({
       id: spaceId,
       companyId: input.companyId,
@@ -50,21 +59,21 @@ export default defineEventHandler(async (event) => {
       icon: input.icon ?? null,
       color: input.color ?? null,
       settings: input.settings ?? {},
-      createdBy: user.id,
+      createdBy: session.user.id,
       createdAt: now,
       updatedAt: now,
     })
     .returning();
 
   // Auto-add creator as admin
-  await db.insert(spaceMembers).values({
-    id: generateId(),
+  await db.insert(schema.spaceMembers).values({
+    id: uuidv7(),
     spaceId: spaceId,
-    userId: user.id,
+    userId: session.user.id,
     role: "admin",
     joinedAt: now,
     invitedBy: null,
   });
 
-  return space;
+  return newSpace;
 });

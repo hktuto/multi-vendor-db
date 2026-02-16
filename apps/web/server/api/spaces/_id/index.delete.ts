@@ -1,14 +1,20 @@
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull } from "drizzle-orm";
-import { db } from "@nuxthub/db";
-import { spaces, spaceMembers } from "@nuxthub/db/schema";
-import { requireAuth } from "../../utils/auth";
 
 /**
  * DELETE /api/spaces/:id
  * Archive (soft delete) a space
  */
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event);
+  const session = await getUserSession(event);
+
+  if (!session.user?.id) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: "Unauthorized",
+    });
+  }
+
   const spaceId = getRouterParam(event, "id");
 
   if (!spaceId) {
@@ -21,7 +27,7 @@ export default defineEventHandler(async (event) => {
   // Check if user is admin of the space
   const member = await db.query.spaceMembers.findFirst({
     where: (members, { eq, and }) =>
-      and(eq(members.spaceId, spaceId), eq(members.userId, user.id)),
+      and(eq(members.spaceId, spaceId), eq(members.userId, session.user.id)),
   });
 
   if (!member || member.role !== "admin") {
@@ -33,12 +39,12 @@ export default defineEventHandler(async (event) => {
 
   // Soft delete (archive)
   const [updated] = await db
-    .update(spaces)
+    .update(schema.spaces)
     .set({
       deletedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(and(eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
+    .where(and(eq(schema.spaces.id, spaceId), isNull(schema.spaces.deletedAt)))
     .returning();
 
   if (!updated) {

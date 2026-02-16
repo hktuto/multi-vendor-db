@@ -1,8 +1,6 @@
 import { z } from "zod";
+import { db, schema } from "@nuxthub/db";
 import { eq, and } from "drizzle-orm";
-import { db } from "../../../db";
-import { spaces, spaceMembers } from "../../../db/schema";
-import { requireAuth } from "../../utils/auth";
 
 const updateSpaceSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -17,7 +15,15 @@ const updateSpaceSchema = z.object({
  * Update a space
  */
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event);
+  const session = await getUserSession(event);
+
+  if (!session.user?.id) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: "Unauthorized",
+    });
+  }
+
   const spaceId = getRouterParam(event, "id");
 
   if (!spaceId) {
@@ -33,7 +39,7 @@ export default defineEventHandler(async (event) => {
   // Check if user is admin of the space
   const member = await db.query.spaceMembers.findFirst({
     where: (members, { eq, and }) =>
-      and(eq(members.spaceId, spaceId), eq(members.userId, user.id)),
+      and(eq(members.spaceId, spaceId), eq(members.userId, session.user.id)),
   });
 
   if (!member || member.role !== "admin") {
@@ -45,12 +51,12 @@ export default defineEventHandler(async (event) => {
 
   // Update space
   const [updated] = await db
-    .update(spaces)
+    .update(schema.spaces)
     .set({
       ...input,
       updatedAt: new Date(),
     })
-    .where(eq(spaces.id, spaceId))
+    .where(eq(schema.spaces.id, spaceId))
     .returning();
 
   if (!updated) {

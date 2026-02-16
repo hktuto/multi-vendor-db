@@ -1,16 +1,21 @@
-import { z } from "zod";
-import { eq, and, isNull, inArray } from "drizzle-orm";
-import { db } from "../../db";
-import { spaceItems, spaceMembers } from "../../db/schema";
-import { requireAuth } from "../utils/auth";
+import { db, schema } from "@nuxthub/db";
+import { eq, and, isNull, asc } from "drizzle-orm";
 
 /**
- * GET /api/spaces/:spaceId/items
+ * GET /api/spaces/:id/items
  * List all items in a space
  */
 export default defineEventHandler(async (event) => {
-  const user = await requireAuth(event);
-  const spaceId = getRouterParam(event, "spaceId");
+  const session = await getUserSession(event);
+
+  if (!session.user?.id) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: "Unauthorized",
+    });
+  }
+
+  const spaceId = getRouterParam(event, "id");
 
   if (!spaceId) {
     throw createError({
@@ -22,7 +27,7 @@ export default defineEventHandler(async (event) => {
   // Check membership
   const member = await db.query.spaceMembers.findFirst({
     where: (members, { eq, and }) =>
-      and(eq(members.spaceId, spaceId), eq(members.userId, user.id)),
+      and(eq(members.spaceId, spaceId), eq(members.userId, session.user.id)),
   });
 
   if (!member) {
@@ -35,10 +40,10 @@ export default defineEventHandler(async (event) => {
   const items = await db.query.spaceItems.findMany({
     where: (items, { eq, and, isNull }) =>
       and(eq(items.spaceId, spaceId), isNull(items.deletedAt)),
-    orderBy: (items, { asc }) => [
-      asc(items.parentId),
-      asc(items.orderIndex),
-      asc(items.name),
+    orderBy: [
+      asc(schema.spaceItems.parentId),
+      asc(schema.spaceItems.orderIndex),
+      asc(schema.spaceItems.name),
     ],
   });
 
