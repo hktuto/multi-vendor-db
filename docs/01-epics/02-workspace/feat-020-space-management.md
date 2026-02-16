@@ -2,7 +2,7 @@
 feature_id: FEAT-020
 epic: "Workspace"
 phase: 1
-status: processing
+status: finish
 priority: high
 created: 2026-02-16
 started: 2026-02-16
@@ -13,7 +13,7 @@ related:
   - "[[FEAT-021-space-items]]"
   - "[[FEAT-022-space-members]]"
 tags:
-  - status/processing
+  - status/finish
   - epic/workspace
   - priority/high
 ---
@@ -179,7 +179,14 @@ const unsubscribe = await electric.subscribe<SyncedSpace>({
 - ✅ 設計 Space 架構（取代舊 Workspace 設計）
 - ✅ 確定 Sync 策略（全局 State + Query-on-demand）
 - ✅ 定義 Database Schema
-- 🔄 開始實現 `useSpaces()` composable
+- ✅ 創建 `useSpaces()` composable
+- ✅ 創建 `useCurrentSpace()` convenience composable
+- ✅ 更新 PGlite TABLE_SCHEMAS
+- ✅ 實現 API endpoints (GET, POST, PATCH, DELETE)
+- ✅ 創建 `/spaces` 列表頁面
+- ✅ 創建 `/spaces/[id]` 詳情頁面
+- ✅ Space 創建 Modal
+- ✅ Item 創建 Modal (folder/table/view/dashboard)
 
 ---
 

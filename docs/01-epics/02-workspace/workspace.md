@@ -3,6 +3,7 @@ epic_id: EPIC-002
 epic_name: "Workspace"
 phase: 1
 status: processing
+updated: 2026-02-16
 created: 2026-02-15
 updated: 2026-02-16
 tags:
@@ -26,7 +27,7 @@ Phase 1 (MVP)
 
 | # | Feature | ID | Status | Priority |
 |---|---------|-----|--------|----------|
-| 1 | [[feat-020-space-management\|Space Management]] | FEAT-020 | 🔄 Processing | High |
+| 1 | [[feat-020-space-management\|Space Management]] | FEAT-020 | ✅ Finish | High |
 | 2 | [[feat-021-space-items\|Space Items (Unified)]] | FEAT-021 | ⏳ Pending | High |
 | 3 | [[feat-022-space-members\|Space Members]] | FEAT-022 | ⏳ Pending | Medium |
 
