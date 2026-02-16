@@ -27,16 +27,12 @@ export interface SyncEventCallbacks<
  * Shape configuration for subscription
  */
 export interface ShapeConfig {
-  /** Table name to sync */
+  /** Table name to sync - also used as shapeKey */
   table: string;
   /** Shape URL (defaults to runtime config ELECTRIC_URL) */
   shapeUrl?: string;
   /** Primary key column name (default: 'id') */
   primaryKey?: string | string[];
-  /** Optional WHERE clause for filtering */
-  where?: string;
-  /** Shape key for caching/identification (defaults to table name) */
-  shapeKey?: string;
   /** Event callbacks for this shape */
   callbacks?: SyncEventCallbacks;
 }
@@ -383,7 +379,7 @@ export function useElectricSync() {
   /**
    * Subscribe to sync events for a table
    *
-   * Multiple components can subscribe to the same shapeKey.
+   * Multiple components can subscribe to the same table.
    * The underlying ShapeStream is shared, but each component
    * gets its own callbacks.
    *
@@ -397,9 +393,11 @@ export function useElectricSync() {
       table,
       shapeUrl,
       primaryKey = ["id"],
-      shapeKey = table,
       callbacks = {},
     } = config;
+
+    // Use table as shapeKey - one shape per table
+    const shapeKey = table;
 
     try {
       globalIsSyncing.value = true;

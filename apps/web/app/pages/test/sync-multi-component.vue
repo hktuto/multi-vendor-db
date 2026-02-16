@@ -1,10 +1,10 @@
 <script setup lang="ts">import { useElectricSync } from "../../composables/useElectricSync";
 
 /**
- * 多組件同 Shape 訂閱測試頁面
+ * 多組件同 Table 訂閱測試頁面
  * 
  * 測試場景：
- * 1. 同一頁面內多個組件同時訂閱同一個 shapeKey
+ * 1. 同一頁面內多個組件同時訂閱同一個 table
  * 2. 驗證共享 ShapeStream（只創建一個底層連接）
  * 3. 驗證獨立取消（A 取消後 B 還能收到事件）
  * 4. 觀察全局訂閱者數量變化
@@ -43,10 +43,10 @@ const globalStatus = computed(() => {
   };
 });
 
-// 特定 shape 的訂閱者數量
-function getSubscriberCount(shapeKey: string): number {
+// 特定 table 的訂閱者數量
+function getSubscriberCount(table: string): number {
   refreshKey.value; // trigger recompute
-  return electric.getSubscriberCount(shapeKey);
+  return electric.getSubscriberCount(table);
 }
 </script>
 
@@ -54,9 +54,9 @@ function getSubscriberCount(shapeKey: string): number {
   <div class="p-6 max-w-6xl mx-auto">
     <!-- 頁面標題 -->
     <div class="mb-6">
-      <h1 class="text-2xl font-bold text-gray-900">🧪 Sync Lab - 多組件同 Shape 測試</h1>
+      <h1 class="text-2xl font-bold text-gray-900">🧪 Sync Lab - 多組件同 Table 測試</h1>
       <p class="text-gray-600 mt-2">
-        測試多個組件同時訂閱同一個 shape 時的共享訂閱行為
+        測試多個組件同時訂閱同一個 table 時的共享訂閱行為
       </p>
     </div>
 
@@ -127,16 +127,16 @@ function getSubscriberCount(shapeKey: string): number {
       </div>
     </div>
 
-    <!-- 測試場景 1：同一 Shape 多組件 -->
+    <!-- 測試場景 1：同一 Table 多組件 -->
     <div class="mb-8">
       <div class="flex items-center gap-2 mb-4">
-        <h2 class="text-lg font-bold text-gray-800">測試 1：同一 Shape 多組件</h2>
+        <h2 class="text-lg font-bold text-gray-800">測試 1：同一 Table 多組件</h2>
         <span class="text-sm text-gray-500">（驗證共享訂閱）</span>
       </div>
 
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
         <p class="text-sm text-blue-800">
-          💡 <strong>預期行為：</strong> 三個組件同時訂閱 <code>test-users</code>，
+          💡 <strong>預期行為：</strong> 三個組件同時訂閱 <code>users</code> table，
           底層應該只有 <strong>1 個 ShapeStream</strong>。
           取消其中一個，另外兩個應該繼續收到事件。
         </p>
@@ -145,35 +145,32 @@ function getSubscriberCount(shapeKey: string): number {
       <div class="grid md:grid-cols-3 gap-4">
         <TestSyncSubscriberCard
           name="組件 A"
-          shape-key="test-users"
           table="users"
           color="blue"
         />
         <TestSyncSubscriberCard
           name="組件 B"
-          shape-key="test-users"
           table="users"
           color="green"
         />
         <TestSyncSubscriberCard
           name="組件 C"
-          shape-key="test-users"
           table="users"
           color="purple"
         />
       </div>
     </div>
 
-    <!-- 測試場景 2：不同 Shape -->
+    <!-- 測試場景 2：不同 Table -->
     <div class="mb-8">
       <div class="flex items-center gap-2 mb-4">
-        <h2 class="text-lg font-bold text-gray-800">測試 2：不同 Shape 對比</h2>
+        <h2 class="text-lg font-bold text-gray-800">測試 2：不同 Table 對比</h2>
         <span class="text-sm text-gray-500">（驗證獨立連接）</span>
       </div>
 
       <div class="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
         <p class="text-sm text-orange-800">
-          💡 <strong>預期行為：</strong> 這兩個組件使用不同的 shapeKey，
+          💡 <strong>預期行為：</strong> 這兩個組件訂閱不同 tables，
           應該創建 <strong>獨立的 ShapeStream</strong>。
           全局狀態應該顯示 2 個活躍 shapes。
         </p>
@@ -181,14 +178,12 @@ function getSubscriberCount(shapeKey: string): number {
 
       <div class="grid md:grid-cols-2 gap-4">
         <TestSyncSubscriberCard
-          name="組件 D (users-alt)"
-          shape-key="test-users-alt"
+          name="組件 D (users)"
           table="users"
           color="orange"
         />
         <TestSyncSubscriberCard
           name="組件 E (companies)"
-          shape-key="test-companies"
           table="companies"
           color="red"
         />
@@ -203,19 +198,19 @@ function getSubscriberCount(shapeKey: string): number {
           觀察「測試 1」的三個組件是否都顯示 🟢 訂閱中
         </li>
         <li>
-          檢查全局狀態：<code>test-users</code> 應該顯示 <strong>3 個訂閱者</strong>
+          檢查全局狀態：<code>users</code> table 應該顯示 <strong>3 個訂閱者</strong>
         </li>
         <li>
           點擊「組件 A」的「取消訂閱」按鈕
         </li>
         <li>
-          檢查全局狀態：<code>test-users</code> 應該變成 <strong>2 個訂閱者</strong>
+          檢查全局狀態：<code>users</code> table 應該變成 <strong>2 個訂閱者</strong>
         </li>
         <li>
           繼續取消 B 和 C，當最後一個取消時 shape 應該完全清理
         </li>
         <li>
-          測試「測試 2」的不同 shape，驗證它們獨立計數
+          測試「測試 2」的不同 table，驗證它們獨立計數
         </li>
       </ol>
     </div>

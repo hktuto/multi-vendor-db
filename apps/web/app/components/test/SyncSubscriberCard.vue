@@ -4,8 +4,6 @@ import { useElectricSync, type SyncEventCallbacks } from "../../composables/useE
 interface Props {
   /** 組件標識名稱 */
   name: string;
-  /** 訂閱的 shape key */
-  shapeKey: string;
   /** 訂閱的表名 */
   table: string;
   /** 組件顏色 */
@@ -71,7 +69,6 @@ async function subscribe() {
   try {
     unsubscribeFn = await electric.subscribe({
       table: props.table,
-      shapeKey: props.shapeKey,
       callbacks,
     });
     isSubscribed.value = true;
@@ -141,10 +138,9 @@ const bgColorClass = computed(() => {
       </span>
     </div>
 
-    <!-- Shape 信息 -->
-    <div class="text-sm text-gray-600 mb-3 space-y-1">
-      <div>Shape Key: <code class="bg-white px-1 rounded">{{ shapeKey }}</code></div>
-      <div>Table: <code class="bg-white px-1 rounded">{{ table }}</code></div>
+    <!-- Table 信息 -->
+    <div class="text-sm text-gray-600 mb-3">
+      Table: <code class="bg-white px-1 rounded">{{ table }}</code>
     </div>
 
     <!-- 統計 -->
