@@ -26,6 +26,7 @@ export const TABLE_SCHEMAS: Record<string, string> = {
       name TEXT NOT NULL,
       slug TEXT NOT NULL UNIQUE,
       owner_id TEXT NOT NULL,
+      plan TEXT NOT NULL DEFAULT 'basic',
       settings JSONB DEFAULT '{"timezone":"UTC","dateFormat":"YYYY-MM-DD","defaultLanguage":"en","theme":{}}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -97,6 +98,22 @@ export const TABLE_SCHEMAS: Record<string, string> = {
       deleted_at TEXT
     )
   `,
+  invites: `
+    CREATE TABLE IF NOT EXISTS invites (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      invited_by TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      accepted_at TEXT,
+      accepted_by TEXT,
+      UNIQUE(company_id, email)
+    )
+  `,
 };
 
 /**
@@ -110,7 +127,8 @@ const AUTO_CREATE_TABLES = [
   "user_group_members",
   "workspaces",
   "folders",
-];
+  "invites"
+];];
 
 /**
  * Singleton PGlite instance
@@ -281,8 +299,8 @@ async function createPgWorker(): Promise<PGliteWorker> {
   await worker.waitReady;
   console.log("[usePgWorker] PGlite Worker ready");
 
-  // NOTE: Temporarily disabled to test if Electric SQL auto-creates tables
-  // await initializeTables(worker);
+  // Initialize tables after worker is ready
+  await initializeTables(worker);
 
   return worker;
 }

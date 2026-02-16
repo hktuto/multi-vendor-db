@@ -50,6 +50,7 @@ export const companies = pgTable('companies', {
   name: varchar('name', { length: 255 }).notNull(),
   slug: varchar('slug', { length: 255 }).notNull().unique(),
   ownerId: uuid('owner_id').notNull().references(() => users.id),
+  plan: varchar('plan', { length: 24 }).notNull().$type<'basic' | 'pro' | 'enterprise'>().default('basic'),
   settings: jsonb('settings').default({
     timezone: 'UTC',
     dateFormat: 'YYYY-MM-DD',
@@ -94,20 +95,21 @@ export const userGroupMembers = pgTable('user_group_members', {
   unique('unique_group_member').on(table.groupId, table.userId),
 ])
 
-export const inviteLinks = pgTable('invite_links', {
+export const invites = pgTable('invites', {
   id: uuid('id').primaryKey(), // Application-generated UUID
   companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
+  email: varchar('email', { length: 255 }).notNull(),
+  invitedBy: uuid('invited_by').notNull().references(() => users.id),
   token: varchar('token', { length: 255 }).notNull().unique(),
   role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'member'>(),
-  maxUses: integer('max_uses'),
-  usedCount: integer('used_count').default(0).notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  status: varchar('status', { length: 20 }).notNull().$type<'pending' | 'accepted' | 'expired' | 'cancelled'>().default('pending'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  usedAt: timestamp('used_at', { withTimezone: true }),
-  usedBy: uuid('used_by').references(() => users.id),
-  isActive: boolean('is_active').default(true).notNull(),
-})
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  acceptedBy: uuid('accepted_by').references(() => users.id),
+}, (table) => [
+  unique('unique_company_invite_email').on(table.companyId, table.email),
+])
 
 // ============================================
 // WORKSPACE & FOLDERS
