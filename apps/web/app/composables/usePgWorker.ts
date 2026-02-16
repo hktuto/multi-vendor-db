@@ -103,13 +103,13 @@ export const TABLE_SCHEMAS: Record<string, string> = {
  * Tables to auto-create on worker initialization
  */
 const AUTO_CREATE_TABLES = [
-  'users',
-  'companies',
-  'company_members',
-  'user_groups',
-  'user_group_members',
-  'workspaces',
-  'folders'
+  "users",
+  "companies",
+  "company_members",
+  "user_groups",
+  "user_group_members",
+  "workspaces",
+  "folders",
 ];
 
 /**
@@ -122,14 +122,17 @@ let initPromise: Promise<PGliteWorker> | null = null;
 /**
  * Check if a table exists in PGlite (PostgreSQL-compatible)
  */
-async function tableExists(pg: PGliteWorker, tableName: string): Promise<boolean> {
+async function tableExists(
+  pg: PGliteWorker,
+  tableName: string,
+): Promise<boolean> {
   const result = await pg.query(
     `SELECT EXISTS (
       SELECT FROM information_schema.tables
       WHERE table_schema = 'public'
       AND table_name = $1
     )`,
-    [tableName]
+    [tableName],
   );
   return result.rows[0]?.exists === true;
 }
@@ -137,7 +140,11 @@ async function tableExists(pg: PGliteWorker, tableName: string): Promise<boolean
 /**
  * Check if a column exists in a table
  */
-async function columnExists(pg: PGliteWorker, tableName: string, columnName: string): Promise<boolean> {
+async function columnExists(
+  pg: PGliteWorker,
+  tableName: string,
+  columnName: string,
+): Promise<boolean> {
   const result = await pg.query(
     `SELECT EXISTS (
       SELECT FROM information_schema.columns
@@ -145,7 +152,7 @@ async function columnExists(pg: PGliteWorker, tableName: string, columnName: str
       AND table_name = $1
       AND column_name = $2
     )`,
-    [tableName, columnName]
+    [tableName, columnName],
   );
   return result.rows[0]?.exists === true;
 }
@@ -154,15 +161,17 @@ async function columnExists(pg: PGliteWorker, tableName: string, columnName: str
  * Migration: Add missing columns to existing tables
  */
 async function migrateTableColumns(pg: PGliteWorker): Promise<void> {
-  console.log('[usePgWorker] Checking for missing columns...');
-  
+  console.log("[usePgWorker] Checking for missing columns...");
+
   // Check and add is_active to users table
-  const hasIsActive = await columnExists(pg, 'users', 'is_active');
+  const hasIsActive = await columnExists(pg, "users", "is_active");
   if (!hasIsActive) {
-    await pg.exec(`ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true`);
-    console.log('[usePgWorker] Added column: users.is_active');
+    await pg.exec(
+      `ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true`,
+    );
+    console.log("[usePgWorker] Added column: users.is_active");
   }
-  
+
   // Add more migrations here as needed
 }
 
@@ -174,20 +183,22 @@ async function batchCheckTablesExist(pg: PGliteWorker): Promise<Set<string>> {
     `SELECT table_name FROM information_schema.tables
      WHERE table_schema = 'public'
      AND table_name = ANY($1)`,
-    [AUTO_CREATE_TABLES]
+    [AUTO_CREATE_TABLES],
   );
-  return new Set(result.rows.map(r => r.table_name));
+  return new Set(result.rows.map((r) => r.table_name));
 }
 
 /**
  * Initialize all required tables - batch creation for efficiency
  */
 async function initializeTables(pg: PGliteWorker): Promise<void> {
-  console.log('[usePgWorker] Checking/creating tables (batch mode)...');
+  console.log("[usePgWorker] Checking/creating tables (batch mode)...");
 
   // Step 1: Batch check which tables exist
   const existingTables = await batchCheckTablesExist(pg);
-  console.log(`[usePgWorker] Existing tables: ${Array.from(existingTables).join(', ') || 'none'}`);
+  console.log(
+    `[usePgWorker] Existing tables: ${Array.from(existingTables).join(", ") || "none"}`,
+  );
 
   // Step 2: Collect all schemas that need to be created
   const missingSchemas: string[] = [];
@@ -205,18 +216,20 @@ async function initializeTables(pg: PGliteWorker): Promise<void> {
 
   // Step 3: Batch create all missing tables in a single exec
   if (missingSchemas.length > 0) {
-    const batchSql = missingSchemas.join(';\n');
-    console.log(`[usePgWorker] Creating ${tablesToCreate.length} tables in batch: ${tablesToCreate.join(', ')}`);
+    const batchSql = missingSchemas.join(";\n");
+    console.log(
+      `[usePgWorker] Creating ${tablesToCreate.length} tables in batch: ${tablesToCreate.join(", ")}`,
+    );
     await pg.exec(batchSql);
-    console.log(`[usePgWorker] Batch created: ${tablesToCreate.join(', ')}`);
+    console.log(`[usePgWorker] Batch created: ${tablesToCreate.join(", ")}`);
   } else {
-    console.log('[usePgWorker] All tables already exist');
+    console.log("[usePgWorker] All tables already exist");
   }
 
   // Step 4: Run migrations for schema updates (kept separate as they depend on existing tables)
   await migrateTableColumns(pg);
 
-  console.log('[usePgWorker] Table initialization complete');
+  console.log("[usePgWorker] Table initialization complete");
 }
 
 /**
@@ -244,6 +257,8 @@ export async function getPgWorker(): Promise<PGliteWorker> {
     // Reset on error so next call can retry
     initPromise = null;
     throw error;
+  } finally {
+    console.log("[usePgWorker] PGlite Worker initialized successfully");
   }
 }
 
@@ -260,7 +275,7 @@ async function createPgWorker(): Promise<PGliteWorker> {
         live,
         electric: electricSync(),
       },
-    }
+    },
   );
 
   await worker.waitReady;
@@ -324,7 +339,7 @@ export function usePgWorker() {
    */
   async function query<T = any>(
     sql: string,
-    params?: any[]
+    params?: any[],
   ): Promise<QueryResult<T>> {
     const worker = await init();
     const result = await worker.query<T>(sql, params);
@@ -347,7 +362,7 @@ export function usePgWorker() {
    */
   async function queryOne<T = any>(
     sql: string,
-    params?: any[]
+    params?: any[],
   ): Promise<T | null> {
     const result = await query<T>(sql, params);
     return result.rows[0] || null;
@@ -358,9 +373,9 @@ export function usePgWorker() {
    */
   async function liveQuery<T = any>(
     sql: string,
-    params?: any[]
+    params?: any[],
   ): Promise<{
-    subscribe: (callback: (data: T[]) => void) => (() => void);
+    subscribe: (callback: (data: T[]) => void) => () => void;
     initialData: T[];
   }> {
     const worker = await init();

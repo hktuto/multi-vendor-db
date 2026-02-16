@@ -9,7 +9,7 @@ import { getPgWorker } from "./usePgWorker";
  * Electric SQL Sync Event Callbacks
  */
 export interface SyncEventCallbacks<
-  T extends Record<string, any> = Record<string, any>
+  T extends Record<string, any> = Record<string, any>,
 > {
   /** Called when new data is inserted */
   onInsert?: (data: T) => void | Promise<void>;
@@ -45,7 +45,7 @@ export interface ShapeConfig {
  * Component-level callback registration
  */
 interface CallbackRegistration<
-  T extends Record<string, any> = Record<string, any>
+  T extends Record<string, any> = Record<string, any>,
 > {
   /** Unique ID for this callback registration */
   id: string;
@@ -97,9 +97,9 @@ function generateCallbackId(): string {
  */
 async function dispatchEvent<T extends Record<string, any>>(
   shapeKey: string,
-  eventType: 'insert' | 'update' | 'delete' | 'upToDate' | 'error',
+  eventType: "insert" | "update" | "delete" | "upToDate" | "error",
   data?: T,
-  extra?: any
+  extra?: any,
 ) {
   const sharedShape = sharedShapes.get(shapeKey);
   if (!sharedShape) return;
@@ -108,24 +108,27 @@ async function dispatchEvent<T extends Record<string, any>>(
     try {
       const { callbacks } = registration;
       switch (eventType) {
-        case 'insert':
+        case "insert":
           await callbacks.onInsert?.(data as T);
           break;
-        case 'update':
+        case "update":
           await callbacks.onUpdate?.(data as T, extra as T);
           break;
-        case 'delete':
+        case "delete":
           await callbacks.onDelete?.(extra as string);
           break;
-        case 'upToDate':
+        case "upToDate":
           await callbacks.onUpToDate?.();
           break;
-        case 'error':
+        case "error":
           await callbacks.onError?.(extra as Error);
           break;
       }
     } catch (error) {
-      console.error(`[useElectricSync] Error in callback for ${shapeKey}:`, error);
+      console.error(
+        `[useElectricSync] Error in callback for ${shapeKey}:`,
+        error,
+      );
     }
   }
 }
@@ -138,10 +141,11 @@ async function getOrCreateSharedShape(
   table: string,
   shapeKey: string,
   shapeUrl: string,
-  primaryKey: string[]
+  primaryKey: string[],
 ): Promise<SharedShapeInstance> {
   // Return existing shared shape if already created
   const existing = sharedShapes.get(shapeKey);
+  console.log(`Existing shared shape for ${shapeKey}:`, existing);
   if (existing) {
     return existing;
   }
@@ -154,7 +158,12 @@ async function getOrCreateSharedShape(
   }
 
   // Create new shared shape - wrap in a promise and track it
-  const creationPromise = createSharedShape(table, shapeKey, shapeUrl, primaryKey);
+  const creationPromise = createSharedShape(
+    table,
+    shapeKey,
+    shapeUrl,
+    primaryKey,
+  );
   inflightShapePromises.set(shapeKey, creationPromise);
 
   try {
@@ -173,7 +182,7 @@ async function createSharedShape(
   table: string,
   shapeKey: string,
   shapeUrl: string,
-  primaryKey: string[]
+  primaryKey: string[],
 ): Promise<SharedShapeInstance> {
   // Double-check if shape was created while we were waiting
   const existing = sharedShapes.get(shapeKey);
@@ -198,15 +207,18 @@ async function createSharedShape(
       if (sharedShape) {
         sharedShape.isUpToDate = true;
         globalIsSyncing.value = false;
-        dispatchEvent(shapeKey, 'upToDate');
+        dispatchEvent(shapeKey, "upToDate");
       }
     },
     onError: (error: Error | any) => {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error(`[useElectricSync] syncShapeToTable error for ${shapeKey}:`, err);
+      console.error(
+        `[useElectricSync] syncShapeToTable error for ${shapeKey}:`,
+        err,
+      );
       globalError.value = err;
       globalIsSyncing.value = false;
-      dispatchEvent(shapeKey, 'error', undefined, err);
+      dispatchEvent(shapeKey, "error", undefined, err);
     },
   });
 
@@ -234,36 +246,37 @@ async function createSharedShape(
   const shapeUnsubscribe = shapeInstance.subscribe(async (messages) => {
     // Handle both single message and array of messages
     const messageArray = Array.isArray(messages) ? messages : [messages];
-    
+
     for (const message of messageArray) {
       // Skip if message is not valid
-      if (!message || typeof message !== 'object') {
-        console.warn('[useElectricSync] Invalid message received:', message);
+      if (!message || typeof message !== "object") {
+        console.warn("[useElectricSync] Invalid message received:", message);
         continue;
       }
-      
+
       const operation = message.headers?.operation;
-      
+
       switch (operation) {
         case "insert": {
           const data = message.value as Record<string, any>;
-          await dispatchEvent(shapeKey, 'insert', data);
+          await dispatchEvent(shapeKey, "insert", data);
           break;
         }
         case "update": {
           const data = message.value as Record<string, any>;
           // Note: old data isn't available from Electric messages directly
           // We pass the same data as both new and old
-          await dispatchEvent(shapeKey, 'update', data, data);
+          await dispatchEvent(shapeKey, "update", data, data);
           break;
         }
         case "delete": {
           // Try to get ID from the message
-          const id = (message.key as string) ||
-                     (message.value as any)?.id ||
-                     (message.value as any)?.[sharedShape.primaryKey[0]];
+          const id =
+            (message.key as string) ||
+            (message.value as any)?.id ||
+            (message.value as any)?.[sharedShape.primaryKey[0]];
           if (id) {
-            await dispatchEvent(shapeKey, 'delete', undefined, id);
+            await dispatchEvent(shapeKey, "delete", undefined, id);
           }
           break;
         }
@@ -344,7 +357,7 @@ export function useElectricSync() {
    * @returns Unsubscribe function
    */
   async function subscribe<T extends Record<string, any> = Record<string, any>>(
-    config: ShapeConfig
+    config: ShapeConfig,
   ): Promise<() => void> {
     const {
       table,
@@ -366,7 +379,7 @@ export function useElectricSync() {
         table,
         shapeKey,
         url,
-        pkArray
+        pkArray,
       );
 
       // Generate unique callback ID for this component
@@ -384,7 +397,10 @@ export function useElectricSync() {
         try {
           await callbacks.onUpToDate();
         } catch (error) {
-          console.error(`[useElectricSync] Error in onUpToDate callback:`, error);
+          console.error(
+            `[useElectricSync] Error in onUpToDate callback:`,
+            error,
+          );
         }
       }
 
@@ -408,9 +424,7 @@ export function useElectricSync() {
    * @param configs - Array of shape configurations
    * @returns Unsubscribe function that unsubscribes all shapes
    */
-  async function subscribeMany(
-    configs: ShapeConfig[]
-  ): Promise<() => void> {
+  async function subscribeMany(configs: ShapeConfig[]): Promise<() => void> {
     const unsubscribeFns: (() => void)[] = [];
 
     for (const config of configs) {
@@ -418,7 +432,10 @@ export function useElectricSync() {
         const unsubscribe = await subscribe(config);
         unsubscribeFns.push(unsubscribe);
       } catch (error) {
-        console.error(`[useElectricSync] Failed to subscribe to ${config.table}:`, error);
+        console.error(
+          `[useElectricSync] Failed to subscribe to ${config.table}:`,
+          error,
+        );
         // Continue with other subscriptions even if one fails
       }
     }
@@ -438,7 +455,7 @@ export function useElectricSync() {
   /**
    * Unsubscribe from sync events for a shape
    *
-   * Note: This removes ALL callbacks for the shape. 
+   * Note: This removes ALL callbacks for the shape.
    * Individual component cleanup should use the function returned by subscribe().
    *
    * @param shapeKey - Shape key to unsubscribe (or table name if no custom key)
