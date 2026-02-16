@@ -560,3 +560,330 @@ unsubB();  // Now shape is fully cleaned up (no more subscribers)
 | **Per-Component Callbacks** | Each `subscribe()` call registers its own callbacks; events are dispatched to all |
 | **Automatic Cleanup** | Shape is only unsubscribed when the last component unsubscribes |
 | **getInflightPromises()** | Prevents race conditions by tracking pending operations across component lifecycle |
+
+---
+
+## useTableSync Composable API
+
+The `useTableSync` composable provides a simplified, reactive API for syncing table data from Electric SQL. It abstracts the lower-level `useElectricSync` and provides automatic sync management with Vue reactivity.
+
+### 1. useTableSync - Generic Table Sync Composable
+
+A generic composable that handles syncing any table with automatic lifecycle management.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `table` | `string` | ✅ | The table name to sync |
+| `callbacks` | `TableSyncCallbacks` | ❌ | Optional callbacks for data changes |
+| `autoRefresh` | `boolean` | ❌ | Auto refresh on mount (default: `true`) |
+
+```typescript
+interface TableSyncCallbacks<T = any> {
+  onInsert?: (row: T) => void;
+  onUpdate?: (row: T) => void;
+  onDelete?: (row: T) => void;
+  onChange?: (rows: T[]) => void;
+}
+
+interface UseTableSyncOptions<T = any> {
+  table: string;
+  callbacks?: TableSyncCallbacks<T>;
+  autoRefresh?: boolean;  // default: true
+}
+```
+
+#### Returns
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `rows` | `Ref<T[]>` | Reactive array of synced rows |
+| `isSyncing` | `Ref<boolean>` | Whether initial sync is in progress |
+| `isUpToDate` | `Ref<boolean>` | Whether data is up to date with server |
+| `error` | `Ref<Error \| null>` | Any sync error |
+| `refresh` | `() => Promise<void>` | Manually trigger a refresh |
+| `query` | `(filter?: FilterFn) => T[]` | Query synced data with optional filter |
+| `queryOne` | `(filter: FilterFn) => T \| undefined` | Query single row |
+| `liveQuery` | `(sql: string, params?: any[]) => LiveQuery` | Execute live SQL query |
+
+```typescript
+interface UseTableSyncReturn<T = any> {
+  rows: Ref<T[]>;
+  isSyncing: Ref<boolean>;
+  isUpToDate: Ref<boolean>;
+  error: Ref<Error | null>;
+  refresh: () => Promise<void>;
+  query: (filter?: (row: T) => boolean) => T[];
+  queryOne: (filter: (row: T) => boolean) => T | undefined;
+  liveQuery: (sql: string, params?: any[]) => LiveQuery<T>;
+}
+```
+
+#### Lifecycle
+
+- **Auto sync on mount**: Automatically starts syncing when component mounts
+- **Auto cleanup on unmount**: Automatically unsubscribes when component unmounts
+- **Shared subscription**: Multiple components using the same table share one underlying ShapeStream
+
+---
+
+### 2. Pre-configured Composables
+
+Built on top of `useTableSync`, these composables provide type-safe, domain-specific APIs:
+
+#### useCurrentUser()
+
+Syncs and provides the current user's profile data.
+
+```typescript
+// Returns current user with additional helpers
+const { 
+  user,           // Ref<User | null>
+  isSyncing,      // Ref<boolean>
+  isUpToDate,     // Ref<boolean>
+  error,          // Ref<Error | null>
+  refresh,        // () => Promise<void>
+  updateProfile   // (data: Partial<User>) => Promise<void>
+} = useCurrentUser(options?);
+
+// Options
+interface UseCurrentUserOptions {
+  onUpdate?: (user: User) => void;
+  onError?: (error: Error) => void;
+}
+```
+
+**Features:**
+- Automatically syncs `users` table filtered to current user
+- Provides `user` as a single object (not array)
+- Includes `updateProfile()` for optimistic updates
+
+#### useCompaniesSync()
+
+Syncs the companies list for the current user.
+
+```typescript
+const {
+  rows,           // Ref<Company[]>
+  companies,      // Alias for rows
+  isSyncing,
+  isUpToDate,
+  error,
+  refresh,
+  queryBySlug,    // (slug: string) => Company | undefined
+  getMyCompanies  // () => Company[] (filter by membership)
+} = useCompaniesSync(options?);
+
+interface UseCompaniesSyncOptions {
+  onChange?: (companies: Company[]) => void;
+  onInsert?: (company: Company) => void;
+}
+```
+
+#### useCompanyMembersSync()
+
+Syncs company members for accessible companies.
+
+```typescript
+const {
+  rows,               // Ref<CompanyMember[]>
+  members,            // Alias for rows
+  isSyncing,
+  isUpToDate,
+  error,
+  refresh,
+  getByCompany,       // (companyId: string) => CompanyMember[]
+  getByUser,          // (userId: string) => CompanyMember[]
+  getCompanyAdmins    // (companyId: string) => CompanyMember[]
+} = useCompanyMembersSync(options?);
+```
+
+---
+
+### 3. Usage Examples
+
+#### Before (Old Way with useUserSync)
+
+```typescript
+// app/components/UserProfile.vue
+<script setup>
+const userSync = useUserSync()
+const user = ref(null)
+const isLoading = ref(true)
+
+onMounted(async () => {
+  // Manual sync initiation
+  await userSync.sync({
+    callbacks: {
+      onInsert: (data) => { user.value = data },
+      onUpdate: (data) => { user.value = data },
+    }
+  })
+  isLoading.value = false
+})
+
+onUnmounted(() => {
+  // Manual cleanup required
+  userSync.unsubscribe()
+})
+</script>
+```
+
+#### After (New Way with useCurrentUser)
+
+```typescript
+// app/components/UserProfile.vue
+<script setup>
+// Single line - handles sync, reactivity, and cleanup automatically
+const { user, isSyncing, error } = useCurrentUser({
+  onUpdate: (updatedUser) => {
+    console.log('Profile updated:', updatedUser)
+  }
+})
+</script>
+
+<template>
+  <div v-if="isSyncing">Loading...</div>
+  <div v-else-if="error">Error: {{ error.message }}</div>
+  <div v-else>
+    <h1>{{ user?.name }}</h1>
+    <p>{{ user?.email }}</p>
+  </div>
+</template>
+```
+
+#### Using useTableSync Directly
+
+```typescript
+// Generic usage for any table
+const { 
+  rows: products,
+  isSyncing,
+  query,
+  queryOne 
+} = useTableSync({
+  table: 'products',
+  callbacks: {
+    onInsert: (product) => toast.success(`New product: ${product.name}`),
+    onDelete: (product) => toast.info(`Removed: ${product.name}`),
+  }
+})
+
+// Query helpers
+const activeProducts = computed(() => 
+  query(p => p.status === 'active')
+)
+
+const featuredProduct = computed(() => 
+  queryOne(p => p.featured === true)
+)
+```
+
+#### Using Pre-configured Composables
+
+```typescript
+// In a dashboard component
+const { companies, isUpToDate: companiesReady } = useCompaniesSync()
+const { members } = useCompanyMembersSync()
+
+// Reactive derived data
+const myCompanyIds = computed(() => 
+  members.value.filter(m => m.user_id === currentUserId).map(m => m.company_id)
+)
+
+const myCompanies = computed(() =>
+  companies.value.filter(c => myCompanyIds.value.includes(c.id))
+)
+
+// Wait for all data to be ready
+const allReady = computed(() => companiesReady.value)
+```
+
+---
+
+### 4. Migration Guide: useUserSync → useCurrentUser
+
+#### Step 1: Update Imports
+
+```typescript
+// Before
+import { useUserSync } from '~/composables/useUserSync'
+
+// After
+import { useCurrentUser } from '~/composables/useCurrentUser'
+```
+
+#### Step 2: Replace Component Usage
+
+```typescript
+// Before
+const userSync = useUserSync()
+const user = ref(null)
+const error = ref(null)
+
+onMounted(async () => {
+  try {
+    await userSync.sync({
+      callbacks: {
+        onInsert: (data) => user.value = data,
+        onUpdate: (data) => user.value = data,
+      }
+    })
+  } catch (e) {
+    error.value = e
+  }
+})
+
+onUnmounted(() => {
+  userSync.unsubscribe()
+})
+
+// After
+const { user, error, isSyncing } = useCurrentUser()
+// No onMounted/onUnmounted needed - automatic lifecycle management!
+```
+
+#### Step 3: Update Template References
+
+```vue
+<!-- Before -->
+<template>
+  <div v-if="!user">Loading...</div>
+  <div v-else>{{ user.name }}</div>
+</template>
+
+<!-- After -->
+<template>
+  <div v-if="isSyncing">Loading...</div>
+  <div v-else-if="error">Error: {{ error.message }}</div>
+  <div v-else>{{ user?.name }}</div>
+</template>
+```
+
+#### Step 4: Update Callbacks (Optional)
+
+```typescript
+// Before - callbacks in sync()
+await userSync.sync({
+  callbacks: {
+    onUpdate: (user) => analytics.track('Profile Viewed', user)
+  }
+})
+
+// After - callbacks in options
+const { user } = useCurrentUser({
+  onUpdate: (user) => analytics.track('Profile Viewed', user)
+})
+```
+
+#### Migration Checklist
+
+- [ ] Replace `useUserSync()` with `useCurrentUser()`
+- [ ] Remove manual `sync()` calls
+- [ ] Remove manual `unsubscribe()` calls
+- [ ] Remove `onMounted`/`onUnmounted` sync logic
+- [ ] Add `isSyncing` to template loading states
+- [ ] Update error handling to use returned `error` ref
+- [ ] Move callbacks from `sync()` to composable options
+
