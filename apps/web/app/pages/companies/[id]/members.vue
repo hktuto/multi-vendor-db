@@ -2,7 +2,7 @@
 import type { TableColumn } from "@nuxt/ui";
 import type {
     SyncedCompanyMember,
-    SyncedInvite,
+    SyncedInviteLinkLink,
 } from "~/composables/useCompanies";
 
 definePageMeta({
@@ -24,12 +24,12 @@ const {
     onMembersChange,
     onInviteLinksChange,
 } = useCompanies();
-const { role, isOwner, canManage } = useCurrentCompanyRole();
+const { role, isOwner, isAdmin, canManage } = useCurrentCompanyRole();
 const { user: currentUser } = useCurrentUser();
 
 // Local state for members and invites (queried on-demand)
 const members = ref<SyncedCompanyMember[]>([]);
-const invites = ref<SyncedInvite[]>([]);
+const invites = ref<SyncedInviteLinkLink[]>([]);
 const isLoadingMembers = ref(false);
 const isLoadingInvites = ref(false);
 const companyComposabls = useCompanies();
@@ -472,27 +472,6 @@ function closeInviteModal() {
                 </template>
             </UDashboardNavbar>
 
-            <UDashboardToolbar>
-                <template #left>
-                    <div class="flex items-center gap-2">
-                        <UBadge
-                            v-if="company?.myRole"
-                            variant="soft"
-                            :color="
-                                company.myRole === 'owner'
-                                    ? 'warning'
-                                    : 'primary'
-                            "
-                        >
-                            {{ company.myRole }}
-                        </UBadge>
-                        <span class="text-sm text-dimmed"
-                            >@{{ company?.slug }}</span
-                        >
-                    </div>
-                </template>
-            </UDashboardToolbar>
-
             <!-- Secondary Navigation -->
             <UDashboardToolbar class="border-b border-default">
                 <template #left>
@@ -527,22 +506,16 @@ function closeInviteModal() {
                                 color="neutral"
                                 variant="ghost"
                                 icon="i-lucide-refresh-cw"
-                                :loading="membersPending"
                                 @click="refreshMembers()"
                             />
                         </div>
                     </template>
 
-                    <UTable
-                        :data="members"
-                        :columns="columns"
-                        :loading="membersPending"
-                        class="w-full"
-                    />
+                    <UTable :data="members" :columns="columns" class="w-full" />
                 </UCard>
 
                 <!-- Invites Section (Owner Only) -->
-                <UCard v-if="isOwner">
+                <UCard v-if="isOwner || isAdmin">
                     <template #header>
                         <div class="flex items-center justify-between">
                             <div>
