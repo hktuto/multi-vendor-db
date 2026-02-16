@@ -16,16 +16,23 @@ definePageMeta({
 
 const electric = useElectricSync();
 
-// Submit event test form
-const newUserName = ref("");
-const newUserEmail = ref("");
+// Update current user test form
+const newName = ref("");
 const isSubmitting = ref(false);
 const submitResult = ref<string | null>(null);
 
-// Test submit - create a new user via API
-async function testSubmit() {
-  if (!newUserName.value || !newUserEmail.value) {
-    submitResult.value = "❌ 請填寫名稱和電郵";
+// Get current user from auth
+const { user } = useUserSession();
+
+// Test update - update current user name via existing API
+async function testUpdateName() {
+  if (!newName.value) {
+    submitResult.value = "❌ 請填寫新名稱";
+    return;
+  }
+
+  if (!user.value?.id) {
+    submitResult.value = "❌ 請先登入";
     return;
   }
 
@@ -33,18 +40,16 @@ async function testSubmit() {
   submitResult.value = null;
 
   try {
-    // Call API to create user (this will trigger sync to all subscribers)
-    const response = await $fetch("/api/test/create-user", {
-      method: "POST",
+    // Use existing PATCH /api/users/me endpoint
+    await $fetch("/api/users/me", {
+      method: "PATCH",
       body: {
-        name: newUserName.value,
-        email: newUserEmail.value,
+        name: newName.value,
       },
     });
 
-    submitResult.value = `✅ 創建成功: ${JSON.stringify(response)}`;
-    newUserName.value = "";
-    newUserEmail.value = "";
+    submitResult.value = `✅ 名稱更新成功: ${newName.value}`;
+    newName.value = "";
   } catch (err: any) {
     submitResult.value = `❌ 失敗: ${err.message || "Unknown error"}`;
   } finally {
@@ -163,49 +168,38 @@ function getSubscriberCount(table: string): number {
       </div>
     </div>
 
-    <!-- 測試場景 3：Submit Event 測試 -->
+    <!-- 測試場景 3：Update Event 測試 -->
     <div class="mb-8">
       <div class="flex items-center gap-2 mb-4">
-        <h2 class="text-lg font-bold text-gray-800">測試 3：Submit Event 測試</h2>
-        <span class="text-sm text-gray-500">（測試創建數據並觀察同步）</span>
+        <h2 class="text-lg font-bold text-gray-800">測試 3：Update Event 測試</h2>
+        <span class="text-sm text-gray-500">（測試更新數據並觀察同步）</span>
       </div>
 
       <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
         <p class="text-sm text-green-800">
-          💡 <strong>預期行為：</strong> 提交表單創建新用戶，
-          所有訂閱 <code>users</code> table 的組件應該收到 <strong>insert</strong> 事件。
+          💡 <strong>預期行為：</strong> 更新當前用戶名稱，
+          所有訂閱 <code>users</code> table 的組件應該收到 <strong>update</strong> 事件。
         </p>
       </div>
 
       <div class="bg-white rounded-lg border p-4">
-        <div class="grid md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">用戶名稱</label>
-            <input
-              v-model="newUserName"
-              type="text"
-              placeholder="輸入名稱..."
-              class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">電郵</label>
-            <input
-              v-model="newUserEmail"
-              type="email"
-              placeholder="輸入電郵..."
-              class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            />
-          </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">新名稱</label>
+          <input
+            v-model="newName"
+            type="text"
+            placeholder="輸入新名稱..."
+            class="w-full md:w-1/2 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+          />
         </div>
 
         <div class="flex items-center gap-4">
           <button
-            @click="testSubmit"
+            @click="testUpdateName"
             :disabled="isSubmitting"
             class="bg-green-500 text-white px-6 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
-            {{ isSubmitting ? "提交中..." : "📝 創建測試用戶" }}
+            {{ isSubmitting ? "更新中..." : "📝 更新我的名稱" }}
           </button>
 
           <span v-if="submitResult" class="text-sm" :class="submitResult.startsWith('✅') ? 'text-green-600' : 'text-red-600'">
