@@ -1,7 +1,7 @@
-import { db } from "@nuxthub/db";
-import { companies, inviteLinks } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { uuidv7 } from "uuidv7";
 
 const createInviteSchema = z.object({
   role: z.enum(["admin", "member"]).default("member"),
@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
 
   // Check if company exists
   const company = await db.query.companies.findFirst({
-    where: and(eq(companies.id, companyId), isNull(companies.deletedAt)),
+    where: and(eq(schema.companies.id, companyId), isNull(schema.companies.deletedAt)),
   });
 
   if (!company) {
@@ -77,9 +77,9 @@ export default defineEventHandler(async (event) => {
   const token = generateToken();
 
   const [invite] = await db
-    .insert(inviteLinks)
+    .insert(schema.inviteLinks)
     .values({
-      id: crypto.randomUUID(),
+      id: uuidv7(),
       companyId,
       createdBy: session.user.id,
       token,

@@ -1,7 +1,7 @@
-import { db } from "@nuxthub/db";
-import { companies, companyMembers, users } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { uuidv7 } from "uuidv7";
 
 const addMemberSchema = z.object({
   email: z.string().email(),
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
 
   // Check if company exists
   const company = await db.query.companies.findFirst({
-    where: and(eq(companies.id, companyId), isNull(companies.deletedAt)),
+    where: and(eq(schema.companies.id, companyId), isNull(schema.companies.deletedAt)),
   });
 
   if (!company) {
@@ -56,9 +56,9 @@ export default defineEventHandler(async (event) => {
   const isOwner = company.ownerId === session.user.id;
   const isAdmin = await db.query.companyMembers.findFirst({
     where: and(
-      eq(companyMembers.companyId, companyId),
-      eq(companyMembers.userId, session.user.id),
-      eq(companyMembers.role, "admin"),
+      eq(schema.companyMembers.companyId, companyId),
+      eq(schema.companyMembers.userId, session.user.id),
+      eq(schema.companyMembers.role, "admin"),
     ),
   });
 
@@ -71,7 +71,7 @@ export default defineEventHandler(async (event) => {
 
   // Find user by email
   const userToAdd = await db.query.users.findFirst({
-    where: eq(users.email, result.data.email),
+    where: eq(schema.users.email, result.data.email),
   });
 
   if (!userToAdd) {
@@ -84,8 +84,8 @@ export default defineEventHandler(async (event) => {
   // Check if already a member
   const existingMember = await db.query.companyMembers.findFirst({
     where: and(
-      eq(companyMembers.companyId, companyId),
-      eq(companyMembers.userId, userToAdd.id),
+      eq(schema.companyMembers.companyId, companyId),
+      eq(schema.companyMembers.userId, userToAdd.id),
     ),
   });
 
@@ -106,9 +106,9 @@ export default defineEventHandler(async (event) => {
 
   // Add member
   const [member] = await db
-    .insert(companyMembers)
+    .insert(schema.companyMembers)
     .values({
-      id: crypto.randomUUID(),
+      id: uuidv7(),
       companyId,
       userId: userToAdd.id,
       role: result.data.role,

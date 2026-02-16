@@ -1,7 +1,7 @@
-import { db } from "@nuxthub/db";
-import { companies, companyMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { uuidv7 } from "uuidv7";
 
 const createCompanySchema = z.object({
   name: z.string().min(1).max(255),
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
 
   // Check if slug is already taken
   const existingCompany = await db.query.companies.findFirst({
-    where: eq(companies.slug, slug),
+    where: eq(schema.companies.slug, slug),
   });
 
   if (existingCompany) {
@@ -50,11 +50,11 @@ export default defineEventHandler(async (event) => {
   }
 
   // Generate UUID for the company
-  const companyId = crypto.randomUUID();
+  const companyId = uuidv7();
 
   // Create company
   const [company] = await db
-    .insert(companies)
+    .insert(schema.companies)
     .values({
       id: companyId,
       name,
@@ -70,8 +70,8 @@ export default defineEventHandler(async (event) => {
     .returning();
 
   // Add owner as admin member
-  await db.insert(companyMembers).values({
-    id: crypto.randomUUID(),
+  await db.insert(schema.companyMembers).values({
+    id: uuidv7(),
     companyId: company.id,
     userId: session.user.id,
     role: "admin",

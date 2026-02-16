@@ -1,6 +1,6 @@
-import { db } from "@nuxthub/db";
-import { companies, inviteLinks, companyMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull } from "drizzle-orm";
+import { uuidv7 } from "uuidv7";
 
 export default defineEventHandler(async (event) => {
   const session = await getUserSession(event);
@@ -24,9 +24,9 @@ export default defineEventHandler(async (event) => {
   // Find the invite
   const invite = await db.query.inviteLinks.findFirst({
     where: and(
-      eq(inviteLinks.token, token),
-      eq(inviteLinks.isActive, true),
-      isNull(inviteLinks.usedAt),
+      eq(schema.inviteLinks.token, token),
+      eq(schema.inviteLinks.isActive, true),
+      isNull(schema.inviteLinks.usedAt),
     ),
     with: {
       company: true,
@@ -59,8 +59,8 @@ export default defineEventHandler(async (event) => {
   // Check if user is already a member
   const existingMember = await db.query.companyMembers.findFirst({
     where: and(
-      eq(companyMembers.companyId, invite.companyId),
-      eq(companyMembers.userId, session.user.id),
+      eq(schema.companyMembers.companyId, invite.companyId),
+      eq(schema.companyMembers.userId, session.user.id),
     ),
   });
 
@@ -80,8 +80,8 @@ export default defineEventHandler(async (event) => {
   }
 
   // Add user as member
-  await db.insert(companyMembers).values({
-    id: crypto.randomUUID(),
+  await db.insert(schema.companyMembers).values({
+    id: uuidv7(),
     companyId: invite.companyId,
     userId: session.user.id,
     role: invite.role,
@@ -102,9 +102,9 @@ export default defineEventHandler(async (event) => {
   }
 
   await db
-    .update(inviteLinks)
+    .update(schema.inviteLinks)
     .set(updates)
-    .where(eq(inviteLinks.id, invite.id));
+    .where(eq(schema.inviteLinks.id, invite.id));
 
   return {
     success: true,
