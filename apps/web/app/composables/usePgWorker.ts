@@ -198,78 +198,281 @@ async function columnExists(
 }
 
 /**
- * Migration: Add missing columns to existing tables
+ * Migration tracking table creation
  */
-async function migrateTableColumns(pg: PGliteWorker): Promise<void> {
-  console.log("[usePgWorker] Checking for missing columns...");
+async function createMigrationTable(pg: PGliteWorker): Promise<void> {
+  await pg.exec(`
+    CREATE TABLE IF NOT EXISTS pglite_migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      migration_name TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      checksum TEXT,
+      success BOOLEAN DEFAULT TRUE
+    )
+  `);
+}
 
-  // Check and add is_active to users table
-  const hasIsActive = await columnExists(pg, "users", "is_active");
-  if (!hasIsActive) {
-    await pg.exec(
-      `ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true`,
+/**
+ * Get list of applied migrations
+ */
+async function getAppliedMigrations(pg: PGliteWorker): Promise<Set<string>> {
+  try {
+    const result = await pg.query<{ migration_name: string }>(
+      "SELECT migration_name FROM pglite_migrations WHERE success = TRUE"
     );
-    console.log("[usePgWorker] Added column: users.is_active");
+    return new Set(result.rows.map((r) => r.migration_name));
+  } catch {
+    // Table doesn't exist yet
+    return new Set();
   }
-
-  // Add more migrations here as needed
 }
 
 /**
- * Check which tables exist - batch query for efficiency
+ * Record migration as applied
  */
-async function batchCheckTablesExist(pg: PGliteWorker): Promise<Set<string>> {
-  const result = await pg.query(
-    `SELECT table_name FROM information_schema.tables
-     WHERE table_schema = 'public'
-     AND table_name = ANY($1)`,
-    [AUTO_CREATE_TABLES],
+async function recordMigration(
+  pg: PGliteWorker,
+  name: string,
+  checksum?: string
+): Promise<void> {
+  await pg.query(
+    `INSERT INTO pglite_migrations (migration_name, checksum, success) 
+     VALUES ($1, $2, TRUE)
+     ON CONFLICT (migration_name) DO UPDATE SET
+     applied_at = CURRENT_TIMESTAMP,
+     checksum = EXCLUDED.checksum`,
+    [name, checksum || ""]
   );
-  return new Set(result.rows.map((r: { table_name: string }) => r.table_name));
 }
 
 /**
- * Initialize all required tables - batch creation for efficiency
+ * Run migrations from static definitions
+ * If migration fails, drops and recreates database
  */
-async function initializeTables(pg: PGliteWorker): Promise<void> {
-  console.log("[usePgWorker] Checking/creating tables (batch mode)...");
+async function runMigrations(pg: PGliteWorker): Promise<void> {
+  console.log("[usePgWorker] Running migrations...");
 
-  // Step 1: Batch check which tables exist
-  const existingTables = await batchCheckTablesExist(pg);
-  console.log(
-    `[usePgWorker] Existing tables: ${Array.from(existingTables).join(", ") || "none"}`,
-  );
+  // Ensure migration table exists
+  await createMigrationTable(pg);
 
-  // Step 2: Collect all schemas that need to be created
-  const missingSchemas: string[] = [];
-  const tablesToCreate: string[] = [];
+  // Get already applied migrations
+  const applied = await getAppliedMigrations(pg);
 
-  for (const tableName of AUTO_CREATE_TABLES) {
-    if (!existingTables.has(tableName)) {
-      const schema = TABLE_SCHEMAS[tableName];
-      if (schema) {
-        missingSchemas.push(schema.trim());
-        tablesToCreate.push(tableName);
+  // Define migrations in order
+  const migrations = [
+    {
+      name: "0000_init_migrations",
+      sql: "",
+      description: "Initialize migration tracking",
+    },
+    {
+      name: "0001_initial_schema",
+      sql: `
+        CREATE TABLE IF NOT EXISTS users (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          name TEXT,
+          avatar_url TEXT,
+          preferences JSONB DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          last_login_at TEXT,
+          is_active BOOLEAN DEFAULT TRUE
+        );
+        CREATE TABLE IF NOT EXISTS companies (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          slug TEXT NOT NULL UNIQUE,
+          owner_id TEXT NOT NULL,
+          plan TEXT NOT NULL DEFAULT 'basic',
+          settings JSONB DEFAULT '{"timezone":"UTC","dateFormat":"YYYY-MM-DD","defaultLanguage":"en","theme":{}}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS company_members (
+          id TEXT PRIMARY KEY,
+          company_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'member',
+          joined_at TEXT NOT NULL,
+          invited_by TEXT,
+          UNIQUE(company_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS user_groups (
+          id TEXT PRIMARY KEY,
+          company_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS user_group_members (
+          id TEXT PRIMARY KEY,
+          company_id TEXT NOT NULL,
+          group_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'member',
+          added_by TEXT NOT NULL,
+          added_at TEXT NOT NULL,
+          UNIQUE(group_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS invite_links (
+          id TEXT PRIMARY KEY,
+          company_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          email TEXT,
+          token TEXT NOT NULL UNIQUE,
+          role TEXT NOT NULL,
+          expires_at TEXT,
+          created_at TEXT NOT NULL,
+          used_at TEXT,
+          used_by TEXT,
+          is_active BOOLEAN DEFAULT TRUE
+        );
+      `,
+      description: "Initial schema",
+    },
+    {
+      name: "0002_spaces_and_items",
+      sql: `
+        DROP TABLE IF EXISTS folders;
+        DROP TABLE IF EXISTS workspaces;
+        
+        CREATE TABLE IF NOT EXISTS spaces (
+          id TEXT PRIMARY KEY,
+          company_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          icon TEXT,
+          color TEXT,
+          settings JSONB DEFAULT '{}',
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS space_members (
+          id TEXT PRIMARY KEY,
+          space_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          joined_at TEXT NOT NULL,
+          invited_by TEXT,
+          UNIQUE(space_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS space_items (
+          id TEXT PRIMARY KEY,
+          space_id TEXT NOT NULL,
+          parent_id TEXT,
+          type TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          icon TEXT,
+          color TEXT,
+          order_index INTEGER DEFAULT 0,
+          config JSONB DEFAULT '{}',
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS space_item_permissions (
+          id TEXT PRIMARY KEY,
+          item_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          permission TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(item_id, user_id)
+        );
+      `,
+      description: "Replace workspaces with spaces",
+    },
+  ];
+
+  let needsReset = false;
+
+  for (const migration of migrations) {
+    if (applied.has(migration.name)) {
+      console.log(`[usePgWorker] Migration ${migration.name} already applied`);
+      continue;
+    }
+
+    try {
+      if (migration.sql) {
+        console.log(`[usePgWorker] Applying migration: ${migration.name}`);
+        await pg.exec(migration.sql);
       }
+      await recordMigration(pg, migration.name);
+      console.log(`[usePgWorker] Applied migration: ${migration.name}`);
+    } catch (error) {
+      console.error(
+        `[usePgWorker] Migration ${migration.name} failed:`,
+        error
+      );
+      needsReset = true;
+      break;
     }
   }
 
-  // Step 3: Batch create all missing tables in a single exec
-  if (missingSchemas.length > 0) {
-    const batchSql = missingSchemas.join(";\n");
+  if (needsReset) {
     console.log(
-      `[usePgWorker] Creating ${tablesToCreate.length} tables in batch: ${tablesToCreate.join(", ")}`,
+      "[usePgWorker] Migration failed, resetting database..."
     );
-    await pg.exec(batchSql);
-    console.log(`[usePgWorker] Batch created: ${tablesToCreate.join(", ")}`);
-  } else {
-    console.log("[usePgWorker] All tables already exist");
+    await resetAndRecreate(pg, migrations);
+  }
+}
+
+/**
+ * Reset database and apply all migrations from scratch
+ */
+async function resetAndRecreate(
+  pg: PGliteWorker,
+  migrations: Array<{ name: string; sql: string }>
+): Promise<void> {
+  console.log("[usePgWorker] Dropping all tables...");
+
+  // Get all tables
+  const result = await pg.query<{ table_name: string }>(
+    `SELECT table_name FROM information_schema.tables 
+     WHERE table_schema = 'public' 
+     AND table_type = 'BASE TABLE'`
+  );
+
+  // Drop all tables except migration table (we'll recreate it)
+  for (const row of result.rows) {
+    if (row.table_name !== "pglite_migrations") {
+      await pg.exec(`DROP TABLE IF EXISTS "${row.table_name}" CASCADE`);
+      console.log(`[usePgWorker] Dropped table: ${row.table_name}`);
+    }
   }
 
-  // Step 4: Run migrations for schema updates (kept separate as they depend on existing tables)
-  await migrateTableColumns(pg);
+  // Clear migration tracking
+  await pg.exec("DELETE FROM pglite_migrations");
 
-  console.log("[usePgWorker] Table initialization complete");
+  console.log("[usePgWorker] Re-applying all migrations...");
+
+  // Re-apply all migrations
+  for (const migration of migrations) {
+    if (migration.sql) {
+      await pg.exec(migration.sql);
+    }
+    await recordMigration(pg, migration.name);
+    console.log(`[usePgWorker] Applied migration: ${migration.name}`);
+  }
+
+  console.log("[usePgWorker] Database reset complete");
+}
+
+/**
+ * Legacy: Initialize all required tables using migrations
+ * This is kept for backward compatibility
+ */
+async function initializeTables(pg: PGliteWorker): Promise<void> {
+  console.log("[usePgWorker] Initializing database...");
+  await runMigrations(pg);
+  console.log("[usePgWorker] Database initialization complete");
 }
 
 /**
