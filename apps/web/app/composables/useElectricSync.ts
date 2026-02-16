@@ -2,7 +2,7 @@ import type {
   SyncShapeToTableResult,
   PGliteWithSync,
 } from "@electric-sql/pglite-sync";
-import { ShapeStream, Shape } from "@electric-sql/client";
+import { ShapeStream, Shape, type ShapeMessage } from "@electric-sql/client";
 import { getPgWorker } from "./usePgWorker";
 
 /**
@@ -39,79 +39,245 @@ export interface ShapeConfig {
   shapeKey?: string;
   /** Event callbacks for this shape */
   callbacks?: SyncEventCallbacks;
-  /** Enable hybrid mode: syncShapeToTable + ShapeStream for UI events */
-  hybridMode?: boolean;
 }
 
 /**
- * Active subscription metadata
+ * Component-level callback registration
  */
-interface ActiveSubscription<
+interface CallbackRegistration<
   T extends Record<string, any> = Record<string, any>
 > {
-  /** syncShapeToTable result (for cleanup) */
-  shape?: SyncShapeToTableResult;
-  /** ShapeStream instance (for hybrid mode) */
-  shapeStream?: ShapeStream;
-  /** Shape instance (for hybrid mode) */
-  shapeInstance?: Shape;
-  /** Unsubscribe function */
-  unsubscribe: () => void;
-  /** Callbacks for events */
+  /** Unique ID for this callback registration */
+  id: string;
+  /** Callbacks */
   callbacks: SyncEventCallbacks<T>;
+}
+
+/**
+ * Shared shape instance - one per shapeKey, shared across all components
+ */
+interface SharedShapeInstance {
+  /** syncShapeToTable result (for data persistence) */
+  shape: SyncShapeToTableResult;
+  /** ShapeStream instance (for real-time events) */
+  shapeStream: ShapeStream;
+  /** Shape instance (for consuming events) */
+  shapeInstance: Shape;
   /** Table name */
   table: string;
   /** Shape key */
   shapeKey: string;
-  /** Whether using hybrid mode */
-  hybridMode: boolean;
+  /** Primary key columns */
+  primaryKey: string[];
+  /** Registered component callbacks - multiple components can register */
+  callbacks: Map<string, CallbackRegistration>;
+  /** Whether initial sync is complete */
+  isUpToDate: boolean;
+  /** Unsubscribe function from Shape */
+  shapeUnsubscribe?: () => void;
 }
 
-// Track active subscriptions - using any for flexibility with generics
-const activeSubscriptions = new Map<string, ActiveSubscription<any>>();
+// Shared shape instances - keyed by shapeKey
+const sharedShapes = new Map<string, SharedShapeInstance>();
 
 // Global sync state
 const globalIsSyncing = ref(false);
-const globalIsUpToDate = ref(false);
 const globalError = ref<Error | null>(null);
 
+// Generate unique callback ID
+function generateCallbackId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 /**
- * Composable for syncing data with Electric SQL using syncShapeToTable pattern
+ * Dispatch event to all registered callbacks for a shape
+ */
+async function dispatchEvent<T extends Record<string, any>>(
+  shapeKey: string,
+  eventType: 'insert' | 'update' | 'delete' | 'upToDate' | 'error',
+  data?: T,
+  extra?: any
+) {
+  const sharedShape = sharedShapes.get(shapeKey);
+  if (!sharedShape) return;
+
+  for (const registration of sharedShape.callbacks.values()) {
+    try {
+      const { callbacks } = registration;
+      switch (eventType) {
+        case 'insert':
+          await callbacks.onInsert?.(data as T);
+          break;
+        case 'update':
+          await callbacks.onUpdate?.(data as T, extra as T);
+          break;
+        case 'delete':
+          await callbacks.onDelete?.(extra as string);
+          break;
+        case 'upToDate':
+          await callbacks.onUpToDate?.();
+          break;
+        case 'error':
+          await callbacks.onError?.(extra as Error);
+          break;
+      }
+    } catch (error) {
+      console.error(`[useElectricSync] Error in callback for ${shapeKey}:`, error);
+    }
+  }
+}
+
+/**
+ * Create a shared shape instance (if not exists) or return existing one
+ */
+async function getOrCreateSharedShape(
+  table: string,
+  shapeKey: string,
+  shapeUrl: string,
+  primaryKey: string[]
+): Promise<SharedShapeInstance> {
+  // Return existing shared shape if already created
+  const existing = sharedShapes.get(shapeKey);
+  if (existing) {
+    return existing;
+  }
+
+  // Create new shared shape
+  const pg = (await getPgWorker()) as unknown as PGliteWithSync;
+
+  // 1. Start syncShapeToTable for data persistence to local PGlite
+  const shape = await pg.electric.syncShapeToTable({
+    shape: {
+      url: shapeUrl,
+      params: { table },
+    },
+    table,
+    primaryKey,
+    shapeKey,
+    onInitialSync: () => {
+      const sharedShape = sharedShapes.get(shapeKey);
+      if (sharedShape) {
+        sharedShape.isUpToDate = true;
+        globalIsSyncing.value = false;
+        dispatchEvent(shapeKey, 'upToDate');
+      }
+    },
+    onError: (error: Error | any) => {
+      const err = error instanceof Error ? error : new Error(String(error));
+      globalError.value = err;
+      globalIsSyncing.value = false;
+      dispatchEvent(shapeKey, 'error', undefined, err);
+    },
+  });
+
+  // 2. Start ShapeStream for real-time events
+  const shapeStream = new ShapeStream({
+    url: shapeUrl,
+    params: { table },
+  });
+
+  const shapeInstance = new Shape(shapeStream);
+
+  // 3. Create shared instance
+  const sharedShape: SharedShapeInstance = {
+    shape,
+    shapeStream,
+    shapeInstance,
+    table,
+    shapeKey,
+    primaryKey,
+    callbacks: new Map(),
+    isUpToDate: false,
+  };
+
+  // 4. Subscribe to shape changes and dispatch to all registered callbacks
+  const shapeUnsubscribe = shapeInstance.subscribe(async (messages) => {
+    for (const message of messages) {
+      const operation = message.headers?.operation;
+      
+      switch (operation) {
+        case "insert": {
+          const data = message.value as Record<string, any>;
+          await dispatchEvent(shapeKey, 'insert', data);
+          break;
+        }
+        case "update": {
+          const data = message.value as Record<string, any>;
+          // Note: old data isn't available from Electric messages directly
+          // We pass the same data as both new and old
+          await dispatchEvent(shapeKey, 'update', data, data);
+          break;
+        }
+        case "delete": {
+          // Try to get ID from the message
+          const id = (message.key as string) ||
+                     (message.value as any)?.id ||
+                     (message.value as any)?.[sharedShape.primaryKey[0]];
+          if (id) {
+            await dispatchEvent(shapeKey, 'delete', undefined, id);
+          }
+          break;
+        }
+      }
+    }
+  });
+
+  sharedShape.shapeUnsubscribe = shapeUnsubscribe;
+  sharedShapes.set(shapeKey, sharedShape);
+
+  return sharedShape;
+}
+
+/**
+ * Cleanup shared shape if no more callbacks registered
+ */
+function maybeCleanupShape(shapeKey: string): void {
+  const sharedShape = sharedShapes.get(shapeKey);
+  if (!sharedShape) return;
+
+  // If no more callbacks, unsubscribe and remove
+  if (sharedShape.callbacks.size === 0) {
+    try {
+      sharedShape.shapeUnsubscribe?.();
+      sharedShape.shape.unsubscribe();
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    sharedShapes.delete(shapeKey);
+  }
+
+  // Reset global state if no more shapes
+  if (sharedShapes.size === 0) {
+    globalIsSyncing.value = false;
+  }
+}
+
+/**
+ * Composable for syncing data with Electric SQL
  *
- * Supports two modes:
- * 1. **syncShapeToTable mode**: Automatic sync to local PGlite table
- * 2. **Hybrid mode**: syncShapeToTable + ShapeStream for real-time UI events
- *
- * Supports multiple shapes simultaneously - each table can have its own subscription.
+ * Multiple components can subscribe to the same shape simultaneously.
+ * Each component receives its own callbacks while sharing the underlying
+ * ShapeStream and syncShapeToTable instance.
  *
  * Usage:
  * ```ts
+ * // Component A
  * const electric = useElectricSync()
- *
- * // Single shape subscription
- * await electric.subscribe({
+ * const unsubscribeA = await electric.subscribe({
  *   table: 'users',
- *   callbacks: {
- *     onInsert: (user) => console.log('New user:', user),
- *     onUpdate: (user, old) => console.log('Updated:', user),
- *     onDelete: (id) => console.log('Deleted:', id),
- *   }
+ *   callbacks: { onInsert: (user) => console.log('A:', user) }
  * })
  *
- * // Hybrid mode (syncShapeToTable + ShapeStream for events)
- * await electric.subscribe({
+ * // Component B (same shape, shares the underlying subscription)
+ * const unsubscribeB = await electric.subscribe({
  *   table: 'users',
- *   hybridMode: true,
- *   callbacks: { onInsert: ... }
+ *   callbacks: { onInsert: (user) => console.log('B:', user) }
  * })
+ * // Both A and B receive the same events
  *
- * // Multiple shapes
- * await electric.subscribe({ table: 'users', shapeKey: 'users-sync' })
- * await electric.subscribe({ table: 'companies', shapeKey: 'companies-sync' })
- *
- * // Later, unsubscribe
- * electric.unsubscribe('users')
- * electric.unsubscribeAll()
+ * // Later, each component cleans up independently
+ * unsubscribeA() // Component A stops receiving events
+ * unsubscribeB() // When last component unsubscribes, shape is cleaned up
  * ```
  */
 export function useElectricSync() {
@@ -120,6 +286,10 @@ export function useElectricSync() {
 
   /**
    * Subscribe to sync events for a table
+   *
+   * Multiple components can subscribe to the same shapeKey.
+   * The underlying ShapeStream is shared, but each component
+   * gets its own callbacks.
    *
    * @param config - Shape configuration object
    * @returns Unsubscribe function
@@ -133,153 +303,47 @@ export function useElectricSync() {
       primaryKey = ["id"],
       shapeKey = table,
       callbacks = {},
-      hybridMode = false,
     } = config;
-
-    // Unsubscribe existing subscription for this shape key
-    unsubscribe(shapeKey);
 
     try {
       globalIsSyncing.value = true;
       globalError.value = null;
 
       const url = shapeUrl || `${ELECTRIC_URL}/v1/shape`;
+      const pkArray = Array.isArray(primaryKey) ? primaryKey : [primaryKey];
 
-      // Get PGlite worker for sync and cast to PGliteWithSync
-      const pg = (await getPgWorker()) as unknown as PGliteWithSync;
+      // Get or create shared shape instance
+      const sharedShape = await getOrCreateSharedShape(
+        table,
+        shapeKey,
+        url,
+        pkArray
+      );
 
-      let shape: SyncShapeToTableResult | undefined;
-      let shapeStream: ShapeStream | undefined;
-      let shapeInstance: Shape | undefined;
+      // Generate unique callback ID for this component
+      const callbackId = generateCallbackId();
 
-      if (hybridMode) {
-        // HYBRID MODE: syncShapeToTable + ShapeStream for UI events
-        
-        // 1. Start syncShapeToTable for data sync to local table
-        shape = await pg.electric.syncShapeToTable({
-          shape: {
-            url,
-            params: { table },
-          },
-          table,
-          primaryKey: Array.isArray(primaryKey) ? primaryKey : [primaryKey],
-          shapeKey,
-          onInitialSync: () => {
-            globalIsUpToDate.value = true;
-            globalIsSyncing.value = false;
-            callbacks.onUpToDate?.();
-          },
-          onError: (error: Error | any) => {
-            const err = error instanceof Error ? error : new Error(String(error));
-            globalError.value = err;
-            globalIsSyncing.value = false;
-            callbacks.onError?.(err);
-          },
-        });
+      // Register this component's callbacks
+      const registration: CallbackRegistration<T> = {
+        id: callbackId,
+        callbacks,
+      };
+      sharedShape.callbacks.set(callbackId, registration);
 
-        // 2. Start ShapeStream for real-time UI events
-        shapeStream = new ShapeStream({
-          url,
-          params: { table },
-        });
-
-        shapeInstance = new Shape(shapeStream);
-
-        // Subscribe to shape changes for UI events
-        const unsubscribeShape = shapeInstance.subscribe(async (messages) => {
-          for (const message of messages) {
-            try {
-              switch (message.headers?.operation) {
-                case "insert": {
-                  const data = message.value as T;
-                  await callbacks.onInsert?.(data);
-                  break;
-                }
-                case "update": {
-                  const data = message.value as T;
-                  // For update, we'd need the old value which isn't directly available
-                  // The callback receives the new value only
-                  await callbacks.onUpdate?.(data, data);
-                  break;
-                }
-                case "delete": {
-                  // Try to get ID from the message
-                  const id = (message.key as string) || 
-                             (message.value as any)?.id || 
-                             (message.value as any)?.[Array.isArray(primaryKey) ? primaryKey[0] : primaryKey];
-                  if (id) {
-                    await callbacks.onDelete?.(id);
-                  }
-                  break;
-                }
-              }
-            } catch (error) {
-              console.error(`[useElectricSync] Error in hybrid callback for ${table}:`, error);
-              const err = error instanceof Error ? error : new Error(String(error));
-              await callbacks.onError?.(err);
-            }
-          }
-        });
-
-        // Create combined unsubscribe function
-        const unsubscribeFn = () => {
-          unsubscribeShape();
-          shape?.unsubscribe();
-        };
-
-        // Store subscription
-        activeSubscriptions.set(shapeKey, {
-          shape,
-          shapeStream,
-          shapeInstance,
-          unsubscribe: unsubscribeFn,
-          callbacks,
-          table,
-          shapeKey,
-          hybridMode: true,
-        });
-
-        return () => unsubscribe(shapeKey);
-      } else {
-        // STANDARD MODE: syncShapeToTable only
-        shape = await pg.electric.syncShapeToTable({
-          shape: {
-            url,
-            params: { table },
-          },
-          table,
-          primaryKey: Array.isArray(primaryKey) ? primaryKey : [primaryKey],
-          shapeKey,
-          onInitialSync: () => {
-            globalIsUpToDate.value = true;
-            globalIsSyncing.value = false;
-            callbacks.onUpToDate?.();
-          },
-          onError: (error: Error | any) => {
-            const err = error instanceof Error ? error : new Error(String(error));
-            globalError.value = err;
-            globalIsSyncing.value = false;
-            callbacks.onError?.(err);
-          },
-        });
-
-        // Create unsubscribe function
-        const unsubscribeFn = () => {
-          shape?.unsubscribe();
-        };
-
-        // Store subscription
-        activeSubscriptions.set(shapeKey, {
-          shape,
-          unsubscribe: unsubscribeFn,
-          callbacks,
-          table,
-          shapeKey,
-          hybridMode: false,
-        });
-
-        return () => unsubscribe(shapeKey);
+      // If already up-to-date, immediately call onUpToDate for this component
+      if (sharedShape.isUpToDate && callbacks.onUpToDate) {
+        try {
+          await callbacks.onUpToDate();
+        } catch (error) {
+          console.error(`[useElectricSync] Error in onUpToDate callback:`, error);
+        }
       }
+
+      // Return unsubscribe function for this specific registration
+      return () => {
+        sharedShape.callbacks.delete(callbackId);
+        maybeCleanupShape(shapeKey);
+      };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       globalError.value = err;
@@ -325,23 +389,17 @@ export function useElectricSync() {
   /**
    * Unsubscribe from sync events for a shape
    *
+   * Note: This removes ALL callbacks for the shape. 
+   * Individual component cleanup should use the function returned by subscribe().
+   *
    * @param shapeKey - Shape key to unsubscribe (or table name if no custom key)
    */
   function unsubscribe(shapeKey: string): void {
-    const subscription = activeSubscriptions.get(shapeKey);
-    if (subscription) {
-      try {
-        subscription.unsubscribe();
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-      activeSubscriptions.delete(shapeKey);
-    }
-
-    // Reset state if no more subscriptions
-    if (activeSubscriptions.size === 0) {
-      globalIsSyncing.value = false;
-      globalIsUpToDate.value = false;
+    const sharedShape = sharedShapes.get(shapeKey);
+    if (sharedShape) {
+      // Clear all callbacks
+      sharedShape.callbacks.clear();
+      maybeCleanupShape(shapeKey);
     }
   }
 
@@ -349,46 +407,61 @@ export function useElectricSync() {
    * Unsubscribe from all active syncs
    */
   function unsubscribeAll(): void {
-    for (const shapeKey of Array.from(activeSubscriptions.keys())) {
+    for (const shapeKey of Array.from(sharedShapes.keys())) {
       unsubscribe(shapeKey);
     }
   }
 
   /**
-   * Check if a shape has an active subscription
+   * Check if a shape has any active subscriptions
    */
   function hasSubscription(shapeKey: string): boolean {
-    return activeSubscriptions.has(shapeKey);
+    const sharedShape = sharedShapes.get(shapeKey);
+    return sharedShape ? sharedShape.callbacks.size > 0 : false;
+  }
+
+  /**
+   * Get count of active component subscriptions for a shape
+   */
+  function getSubscriberCount(shapeKey: string): number {
+    const sharedShape = sharedShapes.get(shapeKey);
+    return sharedShape ? sharedShape.callbacks.size : 0;
   }
 
   /**
    * Get list of subscribed shape keys
    */
   function getSubscribedShapes(): string[] {
-    return Array.from(activeSubscriptions.keys());
+    return Array.from(sharedShapes.keys());
   }
 
   /**
    * Get list of subscribed tables
    */
   function getSubscribedTables(): string[] {
-    return Array.from(activeSubscriptions.values()).map((sub) => sub.table);
+    return Array.from(sharedShapes.values()).map((s) => s.table);
   }
 
   /**
    * Check if a table is being synced (any subscription for this table)
    */
   function isTableSubscribed(table: string): boolean {
-    for (const sub of activeSubscriptions.values()) {
-      if (sub.table === table) return true;
+    for (const sharedShape of sharedShapes.values()) {
+      if (sharedShape.table === table) return true;
     }
     return false;
+  }
+
+  /**
+   * Check if a specific shape is up-to-date (initial sync complete)
+   */
+  function isShapeUpToDate(shapeKey: string): boolean {
+    return sharedShapes.get(shapeKey)?.isUpToDate ?? false;
   }
 
   return {
     // Reactive state (readonly)
     isSyncing: readonly(globalIsSyncing),
-    isUpToDate: readonly(globalIsUpToDate),
     error: readonly(globalError),
 
     // Methods
@@ -397,9 +470,11 @@ export function useElectricSync() {
     unsubscribe,
     unsubscribeAll,
     hasSubscription,
+    getSubscriberCount,
     getSubscribedShapes,
     getSubscribedTables,
     isTableSubscribed,
+    isShapeUpToDate,
   };
 }
 

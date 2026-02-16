@@ -424,45 +424,105 @@ async function initSchema(pg: PGliteWorker) {
 }
 ```
 
-### Sync Composable Pattern
+### useElectricSync Pattern
 
 ```typescript
-// app/composables/useCompanySync.ts
-export function useCompanySync(companyId: string) {
-  const pg = usePGLite();
-  const syncStatus = ref<'idle' | 'syncing' | 'error'>('idle');
-  
-  onMounted(async () => {
-    if (!pg.value) return;
+// app/composables/useElectricSync.ts
+export function useElectricSync() {
+  const config = useRuntimeConfig();
+  const ELECTRIC_URL = config.public.electricUrl || "http://localhost:3000";
+
+  /**
+   * Subscribe to sync events for a table
+   *
+   * Multiple components can subscribe to the same shape simultaneously.
+   * The underlying ShapeStream and syncShapeToTable are shared,
+   * but each component gets its own callbacks.
+   *
+   * @param config - Shape configuration (table, callbacks, shapeKey, etc.)
+   * @returns Unsubscribe function for this specific subscription
+   */
+  async function subscribe<T extends Record<string, any>>(
+    config: ShapeConfig
+  ): Promise<() => void> {
+    const { table, shapeKey = table, callbacks = {} } = config;
     
-    syncStatus.value = 'syncing';
-    const electricUrl = useRuntimeConfig().public.electricUrl;
+    // Get or create shared shape instance
+    // If another component already subscribed to this shapeKey,
+    // it will reuse the existing ShapeStream + syncShapeToTable
+    const sharedShape = await getOrCreateSharedShape(table, shapeKey, url, pkArray);
     
-    try {
-      const shape = await pg.value.electric.syncShapeToTable({
-        shape: {
-          url: `${electricUrl}/v1/shape`,
-          params: {
-            table: 'companies',
-            where: `id = '${companyId}'`,
-          },
-        },
-        table: 'companies',
-        primaryKey: ['id'],
-        shapeKey: `company-${companyId}`,
-      });
-      
-      syncStatus.value = 'idle';
-      
-      onUnmounted(() => {
-        shape.unsubscribe();
-      });
-    } catch (error) {
-      syncStatus.value = 'error';
-      console.error('Sync error:', error);
-    }
-  });
+    // Register this component's callbacks
+    const callbackId = generateCallbackId();
+    sharedShape.callbacks.set(callbackId, { id: callbackId, callbacks });
+    
+    // Events are dispatched to ALL registered callbacks
+    // when ShapeStream receives updates
+    
+    // Return unsubscribe function - only cleans up this component's callback
+    return () => {
+      sharedShape.callbacks.delete(callbackId);
+      maybeCleanupShape(shapeKey); // Only cleanup if no more subscribers
+    };
+  }
   
-  return { syncStatus };
+  return {
+    subscribe,
+    subscribeMany,
+    unsubscribe,
+    unsubscribeAll,
+    hasSubscription,
+    getSubscriberCount,  // NEW: see how many components are using a shape
+    getSubscribedShapes,
+    getSubscribedTables,
+    isTableSubscribed,
+    isShapeUpToDate,     // NEW: check if initial sync is complete
+    // Reactive state
+    isSyncing: readonly(globalIsSyncing),
+    error: readonly(globalError),
+  };
 }
 ```
+
+### Multi-Component Subscription Example
+
+```typescript
+// Component A - User List
+const electric = useElectricSync();
+const unsubA = await electric.subscribe({
+  table: 'users',
+  shapeKey: 'users-sync',
+  callbacks: {
+    onInsert: (user) => console.log('A: New user', user),
+    onUpdate: (user) => console.log('A: Updated', user),
+  }
+});
+
+// Component B - User Avatar (same page, same shape)
+const unsubB = await electric.subscribe({
+  table: 'users', 
+  shapeKey: 'users-sync',  // Same shapeKey - shares underlying connection
+  callbacks: {
+    onUpdate: (user) => console.log('B: Avatar updated', user.avatar_url),
+  }
+});
+
+// Both A and B receive events from the same ShapeStream
+// Only ONE syncShapeToTable + ONE ShapeStream exists for 'users-sync'
+
+// Component A unmounts
+unsubA();  // B still receives events
+
+// Component B unmounts  
+unsubB();  // Now shape is fully cleaned up (no more subscribers)
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Always Hybrid Mode** | syncShapeToTable (data persistence) + ShapeStream (real-time events) are both enabled by default - no `hybridMode` option |
+| **Shared Shape Instances** | One ShapeStream per shapeKey, shared across all components subscribing to the same key |
+| **Per-Component Callbacks** | Each `subscribe()` call registers its own callbacks; events are dispatched to all |
+| **Automatic Cleanup** | Shape is only unsubscribed when the last component unsubscribes |
+| **No `where` clause** | Server-side proxy auth will determine what data to sync |
