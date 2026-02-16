@@ -11,6 +11,7 @@ export interface SyncedCompany {
   name: string;
   slug: string;
   owner_id: string;
+  plan: 'basic' | 'pro' | 'enterprise' | string;  // SaaS plan control
   settings: Record<string, any>;
   created_at: string;
   updated_at: string;
@@ -27,6 +28,23 @@ export interface SyncedCompanyMember {
   role: "owner" | "admin" | "member";
   joined_at: string;
   invited_by: string | null;
+}
+
+/**
+ * Invite data structure - one invite per person
+ */
+export interface SyncedInvite {
+  id: string;
+  company_id: string;
+  email: string;        // Unique per company - one invite per person
+  invited_by: string;   // User ID who sent the invite
+  role: 'admin' | 'member';
+  token: string;        // Unique token for accept link
+  status: 'pending' | 'accepted' | 'expired' | 'cancelled';
+  expires_at: string;
+  created_at: string;
+  accepted_at: string | null;
+  accepted_by: string | null;  // User ID who accepted (for tracking)
 }
 
 /**
@@ -76,6 +94,7 @@ const _useCompanies = () => {
   // Data
   const allCompanies = useState<SyncedCompany[]>("companies-all", () => []);
   const allMembers = useState<SyncedCompanyMember[]>("companies-members", () => []);
+  const allInvites = useState<SyncedInvite[]>("companies-invites", () => []);
 
   // Status
   const isLoading = useState("companies-loading", () => false);
@@ -85,6 +104,7 @@ const _useCompanies = () => {
   // Unsubscribe functions
   let unsubscribeCompanies: (() => void) | null = null;
   let unsubscribeMembers: (() => void) | null = null;
+  let unsubscribeInvites: (() => void) | null = null;
 
   // Computed
   const currentCompany = computed(() => {
@@ -98,6 +118,14 @@ const _useCompanies = () => {
     if (!currentCompanyId.value) return [];
     return allMembers.value.filter(
       (m) => m.company_id === currentCompanyId.value
+    );
+  });
+
+  // Invites for current company
+  const invites = computed(() => {
+    if (!currentCompanyId.value) return [];
+    return allInvites.value.filter(
+      (i) => i.company_id === currentCompanyId.value && i.status === 'pending'
     );
   });
 
@@ -143,7 +171,19 @@ const _useCompanies = () => {
   }
 
   /**
-   * Start syncing companies and members
+   * Refresh invites data from local DB
+   */
+  async function refreshInvites(): Promise<SyncedInvite[]> {
+    const worker = await pg.init();
+    const result = await worker.query<SyncedInvite>(
+      "SELECT * FROM invites ORDER BY created_at DESC"
+    );
+    allInvites.value = result.rows;
+    return result.rows;
+  }
+
+  /**
+   * Start syncing companies, members and invites
    */
   async function startSync() {
     if (isLoading.value) return;
@@ -155,6 +195,7 @@ const _useCompanies = () => {
       // Load initial data
       await refreshCompanies();
       await refreshMembers();
+      await refreshInvites();
 
       // Set first company as current if none selected
       if (!currentCompanyId.value && allCompanies.value.length > 0) {
@@ -212,6 +253,22 @@ const _useCompanies = () => {
           },
         },
       });
+
+      // Subscribe to invites table
+      unsubscribeInvites = await electric.subscribe<SyncedInvite>({
+        table: "invites",
+        callbacks: {
+          onInsert: async () => {
+            await refreshInvites();
+          },
+          onUpdate: async () => {
+            await refreshInvites();
+          },
+          onDelete: async () => {
+            await refreshInvites();
+          },
+        },
+      });
     } catch (err) {
       error.value = err as Error;
       isLoading.value = false;
@@ -224,8 +281,10 @@ const _useCompanies = () => {
   function stopSync() {
     unsubscribeCompanies?.();
     unsubscribeMembers?.();
+    unsubscribeInvites?.();
     unsubscribeCompanies = null;
     unsubscribeMembers = null;
+    unsubscribeInvites = null;
     isLoading.value = false;
     isUpToDate.value = false;
   }
@@ -246,6 +305,7 @@ const _useCompanies = () => {
     currentCompany: readonly(currentCompany),
     allCompanies: readonly(allCompanies),
     members: readonly(members),
+    invites: readonly(invites),
     isLoading: readonly(isLoading),
     isUpToDate: readonly(isUpToDate),
     error: readonly(error),
@@ -254,6 +314,7 @@ const _useCompanies = () => {
     switchCompany,
     refreshCompanies,
     refreshMembers,
+    refreshInvites,
     startSync,
     stopSync,
   };

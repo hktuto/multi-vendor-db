@@ -281,8 +281,8 @@ async function createPgWorker(): Promise<PGliteWorker> {
   await worker.waitReady;
   console.log("[usePgWorker] PGlite Worker ready");
 
-  // Initialize tables after worker is ready
-  await initializeTables(worker);
+  // NOTE: Temporarily disabled to test if Electric SQL auto-creates tables
+  // await initializeTables(worker);
 
   return worker;
 }
