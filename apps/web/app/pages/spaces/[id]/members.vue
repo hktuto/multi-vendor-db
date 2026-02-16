@@ -10,7 +10,7 @@ const spaceId = route.params.id as string;
 
 // Use spaces composable
 const { switchSpace, queryMembers, getMySpaceRole } = useSpaces();
-const { currentUser } = useCurrentUser();
+const { user: currentUser } = useCurrentUser();
 
 // Switch to this space
 onMounted(() => {
@@ -176,18 +176,22 @@ const roleColors: Record<string, string> = {
 // Table columns
 const columns = [
   {
+    id: "user",
     key: "user",
     label: "Member",
   },
   {
+    id: "role",
     key: "role",
     label: "Role",
   },
   {
+    id: "joined",
     key: "joined",
     label: "Joined",
   },
   {
+    id: "actions",
     key: "actions",
     label: "",
   },

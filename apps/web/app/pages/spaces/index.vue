@@ -101,6 +101,7 @@ onMounted(() => {
 
     <template #body>
       <UContainer class="py-6">
+
         <!-- Loading -->
         <div v-if="isLoading" class="flex justify-center py-12">
           <ULoadingIcon size="lg" />
@@ -171,54 +172,54 @@ onMounted(() => {
         </div>
       </UContainer>
     </template>
-
-    <!-- Create Space Modal -->
-    <UModal v-model:open="showCreateModal" title="Create New Space">
-      <template #body>
-        <form class="space-y-4" @submit.prevent="createSpace">
-          <UFormGroup label="Company" required>
-            <USelectMenu
-              v-model="selectedCompanyId"
-              :options="allCompanies"
-              option-attribute="name"
-              value-attribute="id"
-              placeholder="Select a company"
-              class="w-full"
-            />
-          </UFormGroup>
-
-          <UFormGroup label="Name" required>
-            <UInput
-              v-model="newSpaceName"
-              placeholder="e.g., Marketing Team"
-              maxlength="255"
-              class="w-full"
-            />
-          </UFormGroup>
-
-          <UFormGroup label="Description">
-            <UTextarea
-              v-model="newSpaceDescription"
-              placeholder="What is this space for?"
-              :rows="3"
-              class="w-full"
-            />
-          </UFormGroup>
-        </form>
-      </template>
-      <template #footer>
-        <UButton color="neutral" variant="ghost" @click="showCreateModal = false">
-          Cancel
-        </UButton>
-        <UButton
-          color="primary"
-          :loading="isCreating"
-          :disabled="!newSpaceName || !selectedCompanyId"
-          @click="createSpace"
-        >
-          Create Space
-        </UButton>
-      </template>
-    </UModal>
   </UDashboardPanel>
+
+  <!-- Create Space Modal -->
+  <UModal v-model:open="showCreateModal" title="Create New Space">
+    <template #body>
+      <form class="space-y-4" @submit.prevent="createSpace">
+        <UFormGroup label="Company" required>
+          <USelectMenu
+            v-model="selectedCompanyId"
+            :options="allCompanies"
+            option-attribute="name"
+            value-attribute="id"
+            placeholder="Select a company"
+            class="w-full"
+          />
+        </UFormGroup>
+
+        <UFormGroup label="Name" required>
+          <UInput
+            v-model="newSpaceName"
+            placeholder="e.g., Marketing Team"
+            maxlength="255"
+            class="w-full"
+          />
+        </UFormGroup>
+
+        <UFormGroup label="Description">
+          <UTextarea
+            v-model="newSpaceDescription"
+            placeholder="What is this space for?"
+            :rows="3"
+            class="w-full"
+          />
+        </UFormGroup>
+      </form>
+    </template>
+    <template #footer>
+      <UButton color="neutral" variant="ghost" @click="showCreateModal = false">
+        Cancel
+      </UButton>
+      <UButton
+        color="primary"
+        :loading="isCreating"
+        :disabled="!newSpaceName || !selectedCompanyId"
+        @click="createSpace"
+      >
+        Create Space
+      </UButton>
+    </template>
+  </UModal>
 </template>

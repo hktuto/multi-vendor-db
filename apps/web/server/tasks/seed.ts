@@ -56,7 +56,7 @@ export default defineTask({
     // ============== CREATE USERS ==============
     console.log('👥 Creating test users...')
     const users: any[] = []
-    
+
     for (const userData of TEST_USERS) {
       const userId = uuidv7()
       const [user] = await db.insert(schema.users).values({
@@ -114,13 +114,13 @@ export default defineTask({
 
     // ============== CREATE COMPANY MEMBERSHIPS ==============
     console.log('\n👥 Setting up company memberships...')
-    
+
     // Acme Corp members
     await db.insert(schema.companyMembers).values({
       id: uuidv7(),
       companyId: companies[0].id,
       userId: users[0].id,
-      role: 'owner',
+      role: 'admin',
       joinedAt: now
     })
     await db.insert(schema.companyMembers).values({
@@ -144,7 +144,7 @@ export default defineTask({
       id: uuidv7(),
       companyId: companies[1].id,
       userId: users[1].id,
-      role: 'owner',
+      role: 'admin',
       joinedAt: now
     })
     await db.insert(schema.companyMembers).values({
@@ -168,7 +168,7 @@ export default defineTask({
       id: uuidv7(),
       companyId: companies[2].id,
       userId: users[0].id,
-      role: 'owner',
+      role: 'member',
       joinedAt: now
     })
     await db.insert(schema.companyMembers).values({
@@ -182,7 +182,7 @@ export default defineTask({
 
     // ============== CREATE USER GROUPS ==============
     console.log('\n👥 Creating user groups...')
-    
+
     const engineeringGroup = await db.insert(schema.userGroups).values({
       id: uuidv7(),
       companyId: companies[0].id,
@@ -220,7 +220,7 @@ export default defineTask({
     for (const spaceData of TEST_SPACES) {
       const company = companies[spaceData.companyIndex]
       const owner = users[TEST_COMPANIES[spaceData.companyIndex].ownerIndex]
-      
+
       const [space] = await db.insert(schema.spaces).values({
         id: uuidv7(),
         companyId: company.id,
@@ -240,7 +240,7 @@ export default defineTask({
 
     // ============== CREATE SPACE MEMBERSHIPS ==============
     console.log('\n👥 Setting up space memberships...')
-    
+
     // Engineering space members
     await db.insert(schema.spaceMembers).values({
       id: uuidv7(),
@@ -456,7 +456,7 @@ export default defineTask({
 
     // ============== CREATE INVITE LINKS ==============
     console.log('\n📧 Creating invite links...')
-    
+
     await db.insert(schema.inviteLinks).values({
       id: uuidv7(),
       companyId: companies[0].id,
@@ -521,7 +521,7 @@ export default defineTask({
     console.log('  6. Test permissions: viewer cannot create items, editor can, admin can manage')
     console.log('')
 
-    return { 
+    return {
       result: 'Database seeded successfully',
       summary: {
         users: users.length,

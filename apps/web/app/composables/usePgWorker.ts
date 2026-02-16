@@ -41,7 +41,7 @@ async function recordMigration(
   name: string
 ): Promise<void> {
   await pg.query(
-    `INSERT INTO pglite_migrations (migration_name, checksum, success) 
+    `INSERT INTO pglite_migrations (migration_name, checksum, success)
      VALUES ($1, '', TRUE)
      ON CONFLICT (migration_name) DO UPDATE SET
      applied_at = CURRENT_TIMESTAMP`,
@@ -78,23 +78,42 @@ async function fetchMigrationSql(tag: string): Promise<string | null> {
 }
 
 /**
- * Reset all local tables
+ * Reset all local tables (except pglite_migrations)
  */
 async function resetDatabase(pg: PGliteWorker): Promise<void> {
   console.log('[usePgWorker] Resetting database...');
 
   const result = await pg.query<{ table_name: string }>(
-    `SELECT table_name FROM information_schema.tables 
-     WHERE table_schema = 'public' 
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema = 'public'
      AND table_type = 'BASE TABLE'`
   );
 
   for (const row of result.rows) {
-    await pg.exec(`DROP TABLE IF EXISTS "${row.table_name}" CASCADE`);
-    console.log(`[usePgWorker] Dropped: ${row.table_name}`);
+    // Don't drop the migration tracking table
+    if (row.table_name !== 'pglite_migrations') {
+      await pg.exec(`DROP TABLE IF EXISTS "${row.table_name}" CASCADE`);
+      console.log(`[usePgWorker] Dropped: ${row.table_name}`);
+    }
   }
 
   console.log('[usePgWorker] Database reset complete');
+}
+
+/**
+ * Ensure pglite_migrations table exists
+ * This is the migration tracking table for PGlite client database
+ */
+async function ensureMigrationTable(pg: PGliteWorker): Promise<void> {
+  await pg.exec(`
+    CREATE TABLE IF NOT EXISTS pglite_migrations (
+      id SERIAL PRIMARY KEY,
+      migration_name TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      checksum TEXT,
+      success BOOLEAN DEFAULT TRUE
+    )
+  `);
 }
 
 /**
@@ -102,6 +121,9 @@ async function resetDatabase(pg: PGliteWorker): Promise<void> {
  */
 async function runMigrations(pg: PGliteWorker): Promise<void> {
   console.log('[usePgWorker] Checking migrations...');
+
+  // First, ensure migration table exists
+  await ensureMigrationTable(pg);
 
   const journal = await fetchJournal();
   if (!journal) {
@@ -111,7 +133,7 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
 
   // Sort entries by index
   const sortedEntries = journal.entries.sort((a, b) => a.idx - b.idx);
-  
+
   const lastMigration = await getLastAppliedMigration(pg);
   console.log(`[usePgWorker] Last applied: ${lastMigration || 'none'}`);
 
@@ -136,7 +158,7 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
 
   // Apply needed migrations
   const entriesToApply = sortedEntries.slice(startFromIndex);
-  
+
   if (entriesToApply.length === 0) {
     console.log('[usePgWorker] No migrations to apply');
     return;
@@ -267,7 +289,7 @@ export function usePgWorker() {
     const worker = await init();
     const liveExtension = (worker as any).live;
     if (!liveExtension) throw new Error('Live extension not available');
-    
+
     const liveResult = await liveExtension.query(sql, params);
     return {
       subscribe: (callback: (data: T[]) => void) => {

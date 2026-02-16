@@ -196,6 +196,8 @@ export function useTableSync<T extends Record<string, any>>(
  * ```
  */
 export function useCurrentUser(options: SyncEventCallbacks<SyncedUser> = {}) {
+  const { user: sessionUser } = useUserSession();
+
   const {
     rows,
     isSyncing,
@@ -211,8 +213,12 @@ export function useCurrentUser(options: SyncEventCallbacks<SyncedUser> = {}) {
     autoRefresh: true,
   });
 
-  // Get first user (current user) from synced data
-  const user = computed(() => rows.value[0] || null);
+  // Find the logged-in user from synced data by matching session user ID
+  const user = computed(() => {
+    const sessionUserId = sessionUser.value?.id;
+    if (!sessionUserId) return null;
+    return rows.value.find((u) => u.id === sessionUserId) || null;
+  });
 
   return {
     user,

@@ -85,7 +85,7 @@ const navItems = computed(() => [
 const editForm = reactive({
   name: "",
   description: "",
-  icon: "",
+  icon: null as string | null,
   color: "#3b82f6",
   settings: {} as Record<string, any>,
 });
@@ -100,7 +100,7 @@ watch(
     if (val) {
       editForm.name = val.name;
       editForm.description = val.description || "";
-      editForm.icon = val.icon || "";
+      editForm.icon = val.icon || null;
       editForm.color = val.color || "#3b82f6";
       editForm.settings = val.settings || {};
     }
@@ -156,7 +156,7 @@ function cancelEdit() {
   if (space.value) {
     editForm.name = space.value.name;
     editForm.description = space.value.description || "";
-    editForm.icon = space.value.icon || "";
+    editForm.icon = space.value.icon || null;
     editForm.color = space.value.color || "#3b82f6";
     editForm.settings = space.value.settings || {};
   }
@@ -207,7 +207,7 @@ const colorPresets = [
 
 // Icon options
 const iconOptions = [
-  { value: "", label: "Default (🚀)" },
+  { value: null, label: "Default (🚀)" },
   { value: "🚀", label: "🚀 Rocket" },
   { value: "📁", label: "📁 Folder" },
   { value: "⚙️", label: "⚙️ Gear" },

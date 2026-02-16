@@ -14,19 +14,19 @@ export default defineNuxtConfig({
   hooks: {
     'build:before': async () => {
       console.log('📦 Copying PostgreSQL migrations to public directory...')
-      
+
       const rootDir = process.cwd()
       const sourceDir = join(rootDir, 'server/db/migrations/postgresql')
       const targetDir = join(rootDir, 'public/.data/db/migrations/postgresql')
-      
+
       try {
         // Ensure target directory exists
         await fs.mkdir(targetDir, { recursive: true })
-        
+
         // Copy all .sql files
         const files = await fs.readdir(sourceDir)
         let copiedCount = 0
-        
+
         for (const file of files) {
           if (file.endsWith('.sql')) {
             const sourcePath = join(sourceDir, file)
@@ -35,15 +35,15 @@ export default defineNuxtConfig({
             copiedCount++
           }
         }
-        
+
         // Copy meta directory
         const metaSourceDir = join(sourceDir, 'meta')
         const metaTargetDir = join(targetDir, 'meta')
-        
+
         try {
           await fs.access(metaSourceDir)
           await fs.mkdir(metaTargetDir, { recursive: true })
-          
+
           const metaFiles = await fs.readdir(metaSourceDir)
           for (const file of metaFiles) {
             const sourcePath = join(metaSourceDir, file)
@@ -58,24 +58,7 @@ export default defineNuxtConfig({
         console.error('❌ Failed to copy migrations:', error)
       }
     },
-    
-    // Also copy on dev file changes
-    'builder:watch': async (_event, path) => {
-      if (path.includes('server/db/migrations/postgresql') && path.endsWith('.sql')) {
-        const rootDir = process.cwd()
-        const fileName = path.split('/').pop()
-        if (fileName) {
-          const sourcePath = join(rootDir, 'server/db/migrations/postgresql', fileName)
-          const targetPath = join(rootDir, 'public/.data/db/migrations/postgresql', fileName)
-          try {
-            await fs.copyFile(sourcePath, targetPath)
-            console.log(`🔄 Updated migration: ${fileName}`)
-          } catch (error) {
-            console.error(`❌ Failed to update ${fileName}:`, error)
-          }
-        }
-      }
-    },
+
   },
 
   hub: {

@@ -109,7 +109,8 @@ export interface UpdateSpaceInput {
 const _useSpaces = () => {
   const electric = useElectricSync();
   const pg = usePgWorker();
-  const { currentUser } = useCurrentUser();
+  const {loggedIn, user:currentUser} = useUserSession();
+  // const { currentUser } = useUserSync();
   const { allCompanies, currentCompanyId } = useCompanies();
 
   // Global state - current selected space
@@ -125,6 +126,8 @@ const _useSpaces = () => {
 
   // Track subscription cleanup
   let unsubscribeSpaces: (() => void) | null = null;
+  let unsubscribeSpaceMembers: (() => void) | null = null;
+  let unsubscribeUsers: (() => void) | null = null;
 
   /**
    * Current space computed from allSpaces
@@ -161,7 +164,7 @@ const _useSpaces = () => {
 
       // Check if current space belongs to new company
       const currentSpaceBelongsToCompany = currentSpace.value?.company_id === newCompanyId;
-      
+
       if (!currentSpaceBelongsToCompany) {
         // Current space not in new company, switch to first available
         const firstSpace = currentCompanySpaces.value[0];
@@ -231,13 +234,15 @@ const _useSpaces = () => {
       const worker = await pg.init();
       const companyIds = allCompanies.value.map((c) => c.id);
 
-      // Query spaces from all accessible companies
+      // Build IN clause for SQLite compatibility
+      // SQLite doesn't support ANY($1) array syntax
+      const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
       const result = await worker.query<SyncedSpace>(
-        `SELECT * FROM spaces 
-         WHERE company_id = ANY($1) 
-         AND deleted_at IS NULL 
+        `SELECT * FROM spaces
+         WHERE company_id IN (${placeholders})
+         AND deleted_at IS NULL
          ORDER BY name`,
-        [companyIds],
+        companyIds,
       );
 
       allSpaces.value = result.rows;
@@ -361,6 +366,26 @@ const _useSpaces = () => {
         },
       });
 
+      // Subscribe to space_members table for member queries
+      unsubscribeSpaceMembers = await electric.subscribe<SyncedSpaceMember>({
+        table: "space_members",
+        callbacks: {
+          onError: (error) => {
+            console.error("Space members sync error:", error);
+          },
+        },
+      });
+
+      // Subscribe to users table for member user info
+      unsubscribeUsers = await electric.subscribe({
+        table: "users",
+        callbacks: {
+          onError: (error) => {
+            console.error("Users sync error:", error);
+          },
+        },
+      });
+
       // Initial load
       await refreshSpaces();
 
@@ -384,6 +409,14 @@ const _useSpaces = () => {
       unsubscribeSpaces();
       unsubscribeSpaces = null;
     }
+    if (unsubscribeSpaceMembers) {
+      unsubscribeSpaceMembers();
+      unsubscribeSpaceMembers = null;
+    }
+    if (unsubscribeUsers) {
+      unsubscribeUsers();
+      unsubscribeUsers = null;
+    }
     isSyncing.value = false;
   }
 
@@ -400,9 +433,9 @@ const _useSpaces = () => {
   async function queryItems(spaceId: string): Promise<SyncedSpaceItem[]> {
     const worker = await pg.init();
     const result = await worker.query<SyncedSpaceItem>(
-      `SELECT * FROM space_items 
-       WHERE space_id = $1 
-       AND deleted_at IS NULL 
+      `SELECT * FROM space_items
+       WHERE space_id = $1
+       AND deleted_at IS NULL
        ORDER BY parent_id NULLS FIRST, order_index, name`,
       [spaceId],
     );
@@ -414,8 +447,13 @@ const _useSpaces = () => {
    */
   async function queryMembers(spaceId: string): Promise<SyncedSpaceMember[]> {
     const worker = await pg.init();
-    const result = await worker.query<SyncedSpaceMember>(
-      `SELECT sm.*, u.name as user_name, u.email as user_email, u.avatar_url 
+    const result = await worker.query<SyncedSpaceMember & { user: { name: string; email: string; avatar_url: string } }>(
+      `SELECT sm.*, 
+        json_build_object(
+          'name', u.name,
+          'email', u.email,
+          'avatar_url', u.avatar_url
+        ) as user
        FROM space_members sm
        LEFT JOIN users u ON sm.user_id = u.id
        WHERE sm.space_id = $1
