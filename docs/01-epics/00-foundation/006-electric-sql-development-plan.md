@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS companies (
 
 ### 3.3 Sync Shape Configuration
 
-Each composable manages its own sync shape:
+Each composable manages its own sync shape. The **table name is the unique identifier** for a shape - one table corresponds to exactly one shape:
 
 ```typescript
 // Example: useCompanySync
@@ -151,34 +151,44 @@ const shape = await pg.electric.syncShapeToTable({
   shape: {
     url: `${electricUrl}/v1/shape`,
     params: {
-      table: 'companies',
-      where: `id = '${companyId}'`
+      table: 'companies'
+      // Note: No 'where' clause - server-side proxy auth determines what data to sync
     }
   },
   table: 'companies',
-  primaryKey: ['id'],
-  shapeKey: `company-${companyId}`,
+  primaryKey: ['id']
+  // Note: No shapeKey - table name is the unique identifier
 });
 ```
 
-**Shape Keys:**
-- `user-${userId}` - User profile
-- `company-${companyId}` - Company data
-- `company-${companyId}-members` - Company members
-- `company-${companyId}-groups` - User groups
-- `company-${companyId}-workspaces` - Workspaces
+**Key Principles:**
+- **One table = one shape** - Prevents syncShapeToTable conflicts
+- **Table name as identifier** - No separate `shapeKey` needed
+- **Server-side filtering** - Proxy auth determines what data to sync, not client-side `where` clauses
+- **Client only specifies table** - The client requests which table to sync; access control happens server-side
+
+> **Note on Global State:** The sync system uses `window.__electricSharedShapes` for true global singleton storage. This ensures the shared shape registry survives Hot Module Replacement (HMR) during development, preventing duplicate sync subscriptions when code reloads.
 
 ### 3.4 Sync Relationships
+
+Components share underlying ShapeStream instances when subscribing to the same table:
 
 ```
 useFoundationSync (orchestrator)
 ├── useUserSync (always active)
 ├── useCompaniesSync (user's companies list)
-│   └── For each company:
-│       ├── useCompanySync (company details + members)
-│       ├── useUserGroupsSync (groups for company)
-│       └── useWorkspaceSync (workspaces + folders)
+│   └── All components share the same ShapeStream per table:
+│       ├── 'companies' table → shared ShapeStream
+│       ├── 'company_members' table → shared ShapeStream
+│       ├── 'user_groups' table → shared ShapeStream
+│       └── 'workspaces' table → shared ShapeStream
 ```
+
+**Shared Subscription Pattern:**
+- Multiple components subscribing to the same table **share the underlying ShapeStream**
+- Each component registers its own callbacks for updates
+- ShapeStream is only closed when all components unsubscribe
+- This prevents duplicate sync traffic and optimizes resource usage
 
 ### 3.5 Vite Configuration Updates
 
