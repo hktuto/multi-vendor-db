@@ -8,7 +8,7 @@ definePageMeta({
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const userSession = useUserSession();
+const { user } = useUserSync();
 
 const companyId = route.params.id as string;
 
@@ -115,7 +115,7 @@ const columns: TableColumn<any>[] = [
         header: "",
         cell: ({ row }) => {
             const member = row.original;
-            const isSelf = member.userId === userSession.user.value?.id;
+            const isSelf = member.userId === user.value?.id;
 
             // Don't show actions for owner
             if (member.role === "owner") return null;

@@ -5,7 +5,8 @@ definePageMeta({
   middleware: 'auth'
 })
 
-const { user, loggedIn } = useUserSession()
+const { user: sessionUser, loggedIn } = useUserSession()
+const userSync = useUserSync()
 const toast = useToast()
 
 // Use the composables
@@ -52,7 +53,7 @@ async function loadUsers() {
 async function loadCurrentUser() {
   if (!user.value?.id) return
   try {
-    currentUser.value = await userSync.getCurrentUser(user.value.id)
+    currentUser.value = await userSync.getCurrentUser(sessionUser.value.id)
   } catch (error) {
     console.error('Failed to load current user:', error)
   }
@@ -157,7 +158,7 @@ async function updateProfile() {
 
   isLoading.value = true
   try {
-    await userSync.updateUser(user.value.id, { name: newName.value })
+    await userSync.updateUser(sessionUser.value.id, { name: newName.value })
     newName.value = ''
     // toast.add({
     //   title: 'Updated',
