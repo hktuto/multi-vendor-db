@@ -77,15 +77,43 @@ interface SharedShapeInstance {
   shapeUnsubscribe?: () => void;
 }
 
-// Shared shape instances - keyed by shapeKey
-const sharedShapes = new Map<string, SharedShapeInstance>();
+// Global state keys for Nuxt useState
+const SHARED_SHAPES_KEY = "electric-sync-shared-shapes";
+const INFLIGHT_PROMISES_KEY = "electric-sync-inflight-promises";
+const GLOBAL_SYNC_STATE_KEY = "electric-sync-global-state";
 
-// In-flight shape creation promises - prevents race condition when multiple components subscribe simultaneously
-const inflightShapePromises = new Map<string, Promise<SharedShapeInstance>>();
+/**
+ * Get shared shapes Map - uses window object for true global singleton
+ * This survives HMR and works across all component instances
+ */
+function getSharedShapes(): Map<string, SharedShapeInstance> {
+  if (typeof window === "undefined") {
+    // SSR - return empty map (sync only works on client)
+    return new Map();
+  }
+  if (!(window as any).__electricSharedShapes) {
+    (window as any).__electricSharedShapes = new Map<string, SharedShapeInstance>();
+    console.log("[useElectricSync] Created global sharedShapes on window");
+  }
+  return (window as any).__electricSharedShapes;
+}
 
-// Global sync state
-const globalIsSyncing = ref(false);
-const globalError = ref<Error | null>(null);
+/**
+ * Get in-flight promises Map - uses window object for true global singleton
+ */
+function getInflightPromises(): Map<string, Promise<SharedShapeInstance>> {
+  if (typeof window === "undefined") {
+    return new Map();
+  }
+  if (!(window as any).__electricInflightPromises) {
+    (window as any).__electricInflightPromises = new Map<string, Promise<SharedShapeInstance>>();
+  }
+  return (window as any).__electricInflightPromises;
+}
+
+// Global sync state - use useState for SSR compatibility
+const globalIsSyncing = useState("electric-sync-is-syncing", () => false);
+const globalError = useState<Error | null>("electric-sync-error", () => null);
 
 // Generate unique callback ID
 function generateCallbackId(): string {
@@ -101,7 +129,7 @@ async function dispatchEvent<T extends Record<string, any>>(
   data?: T,
   extra?: any,
 ) {
-  const sharedShape = sharedShapes.get(shapeKey);
+  const sharedShape = getSharedShapes().get(shapeKey);
   if (!sharedShape) return;
 
   for (const registration of sharedShape.callbacks.values()) {
@@ -144,15 +172,16 @@ async function getOrCreateSharedShape(
   primaryKey: string[],
 ): Promise<SharedShapeInstance> {
   // Return existing shared shape if already created
-  const existing = sharedShapes.get(shapeKey);
-  console.log(`Existing shared shape for ${shapeKey}:`, existing);
+  const existing = getSharedShapes().get(shapeKey);
+  console.log(`[useElectricSync] Existing shared shape for ${shapeKey}:`, existing);
   if (existing) {
     return existing;
   }
 
   // Check if there's already an in-flight creation promise for this shapeKey
-  const inflight = inflightShapePromises.get(shapeKey);
+  const inflight = getInflightPromises().get(shapeKey);
   if (inflight) {
+    console.log(`[useElectricSync] Waiting for in-flight shape ${shapeKey}`);
     // Wait for the existing creation to complete
     return await inflight;
   }
@@ -171,7 +200,7 @@ async function getOrCreateSharedShape(
     return sharedShape;
   } finally {
     // Clean up in-flight promise regardless of success or failure
-    inflightShapePromises.delete(shapeKey);
+    getInflightPromises().delete(shapeKey);
   }
 }
 
@@ -185,7 +214,7 @@ async function createSharedShape(
   primaryKey: string[],
 ): Promise<SharedShapeInstance> {
   // Double-check if shape was created while we were waiting
-  const existing = sharedShapes.get(shapeKey);
+  const existing = getSharedShapes().get(shapeKey);
   if (existing) {
     return existing;
   }
@@ -203,7 +232,7 @@ async function createSharedShape(
     primaryKey,
     shapeKey,
     onInitialSync: () => {
-      const sharedShape = sharedShapes.get(shapeKey);
+      const sharedShape = getSharedShapes().get(shapeKey);
       if (sharedShape) {
         sharedShape.isUpToDate = true;
         globalIsSyncing.value = false;
@@ -285,7 +314,12 @@ async function createSharedShape(
   });
 
   sharedShape.shapeUnsubscribe = shapeUnsubscribe;
-  sharedShapes.set(shapeKey, sharedShape);
+  getSharedShapes().set(shapeKey, sharedShape);
+
+  console.log(
+    `[useElectricSync] Created and stored shared shape for ${shapeKey}, total shapes:`,
+    getSharedShapes().size,
+  );
 
   return sharedShape;
 }
@@ -294,7 +328,7 @@ async function createSharedShape(
  * Cleanup shared shape if no more callbacks registered
  */
 function maybeCleanupShape(shapeKey: string): void {
-  const sharedShape = sharedShapes.get(shapeKey);
+  const sharedShape = getSharedShapes().get(shapeKey);
   if (!sharedShape) return;
 
   // If no more callbacks, unsubscribe and remove
@@ -305,11 +339,11 @@ function maybeCleanupShape(shapeKey: string): void {
     } catch (e) {
       // Ignore cleanup errors
     }
-    sharedShapes.delete(shapeKey);
+    getSharedShapes().delete(shapeKey);
   }
 
   // Reset global state if no more shapes
-  if (sharedShapes.size === 0) {
+  if (getSharedShapes().size === 0) {
     globalIsSyncing.value = false;
   }
 }
@@ -461,7 +495,7 @@ export function useElectricSync() {
    * @param shapeKey - Shape key to unsubscribe (or table name if no custom key)
    */
   function unsubscribe(shapeKey: string): void {
-    const sharedShape = sharedShapes.get(shapeKey);
+    const sharedShape = getSharedShapes().get(shapeKey);
     if (sharedShape) {
       // Clear all callbacks
       sharedShape.callbacks.clear();
@@ -473,7 +507,7 @@ export function useElectricSync() {
    * Unsubscribe from all active syncs
    */
   function unsubscribeAll(): void {
-    for (const shapeKey of Array.from(sharedShapes.keys())) {
+    for (const shapeKey of Array.from(getSharedShapes().keys())) {
       unsubscribe(shapeKey);
     }
   }
@@ -482,7 +516,7 @@ export function useElectricSync() {
    * Check if a shape has any active subscriptions
    */
   function hasSubscription(shapeKey: string): boolean {
-    const sharedShape = sharedShapes.get(shapeKey);
+    const sharedShape = getSharedShapes().get(shapeKey);
     return sharedShape ? sharedShape.callbacks.size > 0 : false;
   }
 
@@ -490,7 +524,7 @@ export function useElectricSync() {
    * Get count of active component subscriptions for a shape
    */
   function getSubscriberCount(shapeKey: string): number {
-    const sharedShape = sharedShapes.get(shapeKey);
+    const sharedShape = getSharedShapes().get(shapeKey);
     return sharedShape ? sharedShape.callbacks.size : 0;
   }
 
@@ -498,21 +532,21 @@ export function useElectricSync() {
    * Get list of subscribed shape keys
    */
   function getSubscribedShapes(): string[] {
-    return Array.from(sharedShapes.keys());
+    return Array.from(getSharedShapes().keys());
   }
 
   /**
    * Get list of subscribed tables
    */
   function getSubscribedTables(): string[] {
-    return Array.from(sharedShapes.values()).map((s) => s.table);
+    return Array.from(getSharedShapes().values()).map((s) => s.table);
   }
 
   /**
    * Check if a table is being synced (any subscription for this table)
    */
   function isTableSubscribed(table: string): boolean {
-    for (const sharedShape of sharedShapes.values()) {
+    for (const sharedShape of getSharedShapes().values()) {
       if (sharedShape.table === table) return true;
     }
     return false;
@@ -522,7 +556,7 @@ export function useElectricSync() {
    * Check if a specific shape is up-to-date (initial sync complete)
    */
   function isShapeUpToDate(shapeKey: string): boolean {
-    return sharedShapes.get(shapeKey)?.isUpToDate ?? false;
+    return getSharedShapes().get(shapeKey)?.isUpToDate ?? false;
   }
 
   return {
