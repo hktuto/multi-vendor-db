@@ -167,27 +167,55 @@ async function migrateTableColumns(pg: PGliteWorker): Promise<void> {
 }
 
 /**
- * Initialize all required tables
+ * Check which tables exist - batch query for efficiency
+ */
+async function batchCheckTablesExist(pg: PGliteWorker): Promise<Set<string>> {
+  const result = await pg.query(
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema = 'public'
+     AND table_name = ANY($1)`,
+    [AUTO_CREATE_TABLES]
+  );
+  return new Set(result.rows.map(r => r.table_name));
+}
+
+/**
+ * Initialize all required tables - batch creation for efficiency
  */
 async function initializeTables(pg: PGliteWorker): Promise<void> {
-  console.log('[usePgWorker] Checking/creating tables...');
-  
+  console.log('[usePgWorker] Checking/creating tables (batch mode)...');
+
+  // Step 1: Batch check which tables exist
+  const existingTables = await batchCheckTablesExist(pg);
+  console.log(`[usePgWorker] Existing tables: ${Array.from(existingTables).join(', ') || 'none'}`);
+
+  // Step 2: Collect all schemas that need to be created
+  const missingSchemas: string[] = [];
+  const tablesToCreate: string[] = [];
+
   for (const tableName of AUTO_CREATE_TABLES) {
-    const exists = await tableExists(pg, tableName);
-    if (!exists) {
+    if (!existingTables.has(tableName)) {
       const schema = TABLE_SCHEMAS[tableName];
       if (schema) {
-        await pg.exec(schema);
-        console.log(`[usePgWorker] Created table: ${tableName}`);
+        missingSchemas.push(schema.trim());
+        tablesToCreate.push(tableName);
       }
-    } else {
-      console.log(`[usePgWorker] Table exists: ${tableName}`);
     }
   }
-  
-  // Run migrations for schema updates
+
+  // Step 3: Batch create all missing tables in a single exec
+  if (missingSchemas.length > 0) {
+    const batchSql = missingSchemas.join(';\n');
+    console.log(`[usePgWorker] Creating ${tablesToCreate.length} tables in batch: ${tablesToCreate.join(', ')}`);
+    await pg.exec(batchSql);
+    console.log(`[usePgWorker] Batch created: ${tablesToCreate.join(', ')}`);
+  } else {
+    console.log('[usePgWorker] All tables already exist');
+  }
+
+  // Step 4: Run migrations for schema updates (kept separate as they depend on existing tables)
   await migrateTableColumns(pg);
-  
+
   console.log('[usePgWorker] Table initialization complete');
 }
 
