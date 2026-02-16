@@ -5,8 +5,7 @@ defineProps<{
   collapsed?: boolean
 }>()
 
-const { user: sessionUser, clear } = useUserSession()
-const { logout: electricLogout, data: syncedUsers } = useUserSync()
+const { clear } = useUserSession()
 const colorMode = useColorMode()
 const appConfig = useAppConfig()
 const router = useRouter()
@@ -14,16 +13,10 @@ const router = useRouter()
 const colors = ['red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose']
 const neutrals = ['slate', 'gray', 'zinc', 'neutral', 'stone']
 
-// Start syncing user data on mount
-onMounted(async () => {
-  const userSync = useUserSync()
-  await userSync.sync()
-})
+// Use reactive synced user data - auto syncs on mount
+const { user } = useCurrentUser()
 
-// Use synced user data if available, fallback to session
-const user = computed(() => syncedUsers.value[0] || sessionUser.value)
-
-// Build user info from synced or session data
+// Build user info from synced data
 const userInfo = computed(() => ({
   name: user.value?.name || 'User',
   avatar: {
@@ -33,8 +26,9 @@ const userInfo = computed(() => ({
 }))
 
 async function logout() {
-  // Clear Electric SQL synced data first
-  await electricLogout()
+  // Unsubscribe from Electric sync first
+  const electric = useElectricSync()
+  electric.unsubscribe('users')
   
   await $fetch('/api/auth/logout', { method: 'POST' })
   await clear()
