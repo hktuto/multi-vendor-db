@@ -4,7 +4,7 @@ import { PGliteWorker } from "@electric-sql/pglite/worker";
 
 /**
  * Table schema definitions for PGlite client database
- * These mirror the server database schema for synced tables
+ * Kept for backward compatibility
  */
 export const TABLE_SCHEMAS: Record<string, string> = {
   users: `
@@ -139,63 +139,10 @@ export const TABLE_SCHEMAS: Record<string, string> = {
 };
 
 /**
- * Tables to auto-create on worker initialization
- */
-const AUTO_CREATE_TABLES = [
-  "users",
-  "companies",
-  "company_members",
-  "user_groups",
-  "user_group_members",
-  "workspaces",
-  "folders",
-  "invite_links",
-];
-
-/**
  * Singleton PGlite instance
- * Shared across all composables
  */
 let pgInstance: PGliteWorker | null = null;
 let initPromise: Promise<PGliteWorker> | null = null;
-
-/**
- * Check if a table exists in PGlite (PostgreSQL-compatible)
- */
-async function tableExists(
-  pg: PGliteWorker,
-  tableName: string,
-): Promise<boolean> {
-  const result = await pg.query(
-    `SELECT EXISTS (
-      SELECT FROM information_schema.tables
-      WHERE table_schema = 'public'
-      AND table_name = $1
-    )`,
-    [tableName],
-  );
-  return (result.rows[0] as { exists?: boolean } | undefined)?.exists === true;
-}
-
-/**
- * Check if a column exists in a table
- */
-async function columnExists(
-  pg: PGliteWorker,
-  tableName: string,
-  columnName: string,
-): Promise<boolean> {
-  const result = await pg.query(
-    `SELECT EXISTS (
-      SELECT FROM information_schema.columns
-      WHERE table_schema = 'public'
-      AND table_name = $1
-      AND column_name = $2
-    )`,
-    [tableName, columnName],
-  );
-  return (result.rows[0] as { exists?: boolean } | undefined)?.exists === true;
-}
 
 /**
  * Migration tracking table creation
@@ -222,7 +169,6 @@ async function getAppliedMigrations(pg: PGliteWorker): Promise<Set<string>> {
     );
     return new Set(result.rows.map((r) => r.migration_name));
   } catch {
-    // Table doesn't exist yet
     return new Set();
   }
 }
@@ -246,7 +192,24 @@ async function recordMigration(
 }
 
 /**
- * Run migrations from static definitions
+ * Fetch migration SQL from public directory
+ */
+async function fetchMigrationSql(name: string): Promise<string | null> {
+  try {
+    const response = await fetch(`/migrations/${name}.sql`);
+    if (!response.ok) {
+      console.warn(`[usePgWorker] Migration file not found: ${name}.sql`);
+      return null;
+    }
+    return await response.text();
+  } catch (error) {
+    console.error(`[usePgWorker] Failed to fetch migration ${name}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Run migrations from public directory
  * If migration fails, drops and recreates database
  */
 async function runMigrations(pg: PGliteWorker): Promise<void> {
@@ -260,135 +223,9 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
 
   // Define migrations in order
   const migrations = [
-    {
-      name: "0000_init_migrations",
-      sql: "",
-      description: "Initialize migration tracking",
-    },
-    {
-      name: "0001_initial_schema",
-      sql: `
-        CREATE TABLE IF NOT EXISTS users (
-          id TEXT PRIMARY KEY,
-          email TEXT NOT NULL UNIQUE,
-          name TEXT,
-          avatar_url TEXT,
-          preferences JSONB DEFAULT '{}',
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          last_login_at TEXT,
-          is_active BOOLEAN DEFAULT TRUE
-        );
-        CREATE TABLE IF NOT EXISTS companies (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          slug TEXT NOT NULL UNIQUE,
-          owner_id TEXT NOT NULL,
-          plan TEXT NOT NULL DEFAULT 'basic',
-          settings JSONB DEFAULT '{"timezone":"UTC","dateFormat":"YYYY-MM-DD","defaultLanguage":"en","theme":{}}',
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          deleted_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS company_members (
-          id TEXT PRIMARY KEY,
-          company_id TEXT NOT NULL,
-          user_id TEXT NOT NULL,
-          role TEXT NOT NULL DEFAULT 'member',
-          joined_at TEXT NOT NULL,
-          invited_by TEXT,
-          UNIQUE(company_id, user_id)
-        );
-        CREATE TABLE IF NOT EXISTS user_groups (
-          id TEXT PRIMARY KEY,
-          company_id TEXT NOT NULL,
-          name TEXT NOT NULL,
-          description TEXT,
-          created_by TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS user_group_members (
-          id TEXT PRIMARY KEY,
-          company_id TEXT NOT NULL,
-          group_id TEXT NOT NULL,
-          user_id TEXT NOT NULL,
-          role TEXT NOT NULL DEFAULT 'member',
-          added_by TEXT NOT NULL,
-          added_at TEXT NOT NULL,
-          UNIQUE(group_id, user_id)
-        );
-        CREATE TABLE IF NOT EXISTS invite_links (
-          id TEXT PRIMARY KEY,
-          company_id TEXT NOT NULL,
-          created_by TEXT NOT NULL,
-          email TEXT,
-          token TEXT NOT NULL UNIQUE,
-          role TEXT NOT NULL,
-          expires_at TEXT,
-          created_at TEXT NOT NULL,
-          used_at TEXT,
-          used_by TEXT,
-          is_active BOOLEAN DEFAULT TRUE
-        );
-      `,
-      description: "Initial schema",
-    },
-    {
-      name: "0002_spaces_and_items",
-      sql: `
-        DROP TABLE IF EXISTS folders;
-        DROP TABLE IF EXISTS workspaces;
-        
-        CREATE TABLE IF NOT EXISTS spaces (
-          id TEXT PRIMARY KEY,
-          company_id TEXT NOT NULL,
-          name TEXT NOT NULL,
-          description TEXT,
-          icon TEXT,
-          color TEXT,
-          settings JSONB DEFAULT '{}',
-          created_by TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          deleted_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS space_members (
-          id TEXT PRIMARY KEY,
-          space_id TEXT NOT NULL,
-          user_id TEXT NOT NULL,
-          role TEXT NOT NULL,
-          joined_at TEXT NOT NULL,
-          invited_by TEXT,
-          UNIQUE(space_id, user_id)
-        );
-        CREATE TABLE IF NOT EXISTS space_items (
-          id TEXT PRIMARY KEY,
-          space_id TEXT NOT NULL,
-          parent_id TEXT,
-          type TEXT NOT NULL,
-          name TEXT NOT NULL,
-          description TEXT,
-          icon TEXT,
-          color TEXT,
-          order_index INTEGER DEFAULT 0,
-          config JSONB DEFAULT '{}',
-          created_by TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          deleted_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS space_item_permissions (
-          id TEXT PRIMARY KEY,
-          item_id TEXT NOT NULL,
-          user_id TEXT NOT NULL,
-          permission TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          UNIQUE(item_id, user_id)
-        );
-      `,
-      description: "Replace workspaces with spaces",
-    },
+    { name: "0000_init_migrations", description: "Initialize migration tracking" },
+    { name: "0001_initial_schema", description: "Initial schema for users, companies, members" },
+    { name: "0002_spaces_and_items", description: "Replace workspaces with unified spaces schema" },
   ];
 
   let needsReset = false;
@@ -399,10 +236,18 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
       continue;
     }
 
+    // Fetch SQL from public directory
+    const sql = await fetchMigrationSql(migration.name);
+    
+    if (!sql && migration.name !== "0000_init_migrations") {
+      console.error(`[usePgWorker] Migration SQL not found: ${migration.name}`);
+      continue;
+    }
+
     try {
-      if (migration.sql) {
+      if (sql) {
         console.log(`[usePgWorker] Applying migration: ${migration.name}`);
-        await pg.exec(migration.sql);
+        await pg.exec(sql);
       }
       await recordMigration(pg, migration.name);
       console.log(`[usePgWorker] Applied migration: ${migration.name}`);
@@ -429,7 +274,7 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
  */
 async function resetAndRecreate(
   pg: PGliteWorker,
-  migrations: Array<{ name: string; sql: string }>
+  migrations: Array<{ name: string; description: string }>
 ): Promise<void> {
   console.log("[usePgWorker] Dropping all tables...");
 
@@ -440,7 +285,7 @@ async function resetAndRecreate(
      AND table_type = 'BASE TABLE'`
   );
 
-  // Drop all tables except migration table (we'll recreate it)
+  // Drop all tables except migration table
   for (const row of result.rows) {
     if (row.table_name !== "pglite_migrations") {
       await pg.exec(`DROP TABLE IF EXISTS "${row.table_name}" CASCADE`);
@@ -455,8 +300,9 @@ async function resetAndRecreate(
 
   // Re-apply all migrations
   for (const migration of migrations) {
-    if (migration.sql) {
-      await pg.exec(migration.sql);
+    const sql = await fetchMigrationSql(migration.name);
+    if (sql) {
+      await pg.exec(sql);
     }
     await recordMigration(pg, migration.name);
     console.log(`[usePgWorker] Applied migration: ${migration.name}`);
@@ -466,8 +312,7 @@ async function resetAndRecreate(
 }
 
 /**
- * Legacy: Initialize all required tables using migrations
- * This is kept for backward compatibility
+ * Initialize all required tables using migrations
  */
 async function initializeTables(pg: PGliteWorker): Promise<void> {
   console.log("[usePgWorker] Initializing database...");
@@ -477,31 +322,24 @@ async function initializeTables(pg: PGliteWorker): Promise<void> {
 
 /**
  * Get or create PGlite Worker instance
- * Returns singleton to avoid multiple connections
  */
 export async function getPgWorker(): Promise<PGliteWorker> {
-  // Return existing instance
   if (pgInstance) {
     return pgInstance;
   }
 
-  // Return existing init promise (prevents duplicate initialization)
   if (initPromise) {
     return initPromise;
   }
 
-  // Create new instance
   initPromise = createPgWorker();
 
   try {
     pgInstance = await initPromise;
     return pgInstance;
   } catch (error) {
-    // Reset on error so next call can retry
     initPromise = null;
     throw error;
-  } finally {
-    console.log("[usePgWorker] PGlite Worker initialized successfully");
   }
 }
 
@@ -524,14 +362,13 @@ async function createPgWorker(): Promise<PGliteWorker> {
   await worker.waitReady;
   console.log("[usePgWorker] PGlite Worker ready");
 
-  // Initialize tables after worker is ready
   await initializeTables(worker);
 
   return worker;
 }
 
 /**
- * Reset PGlite instance (useful for logout/testing)
+ * Reset PGlite instance
  */
 export function resetPgWorker(): void {
   pgInstance = null;
@@ -549,16 +386,12 @@ export interface QueryResult<T = any> {
 
 /**
  * Composable wrapper for convenience
- * Provides typed query methods and reactive state
  */
 export function usePgWorker() {
   const isReady = useState("pg-worker-ready", () => false);
   const isLoading = useState("pg-worker-loading", () => false);
   const error = useState<Error | null>("pg-worker-error", () => null);
 
-  /**
-   * Initialize PGlite Worker
-   */
   async function init(): Promise<PGliteWorker> {
     if (isReady.value && pgInstance) return pgInstance;
 
@@ -577,9 +410,6 @@ export function usePgWorker() {
     }
   }
 
-  /**
-   * Execute a SQL query
-   */
   async function query<T = any>(
     sql: string,
     params?: any[],
@@ -592,17 +422,11 @@ export function usePgWorker() {
     };
   }
 
-  /**
-   * Execute a SQL command (for DDL/INSERT/UPDATE/DELETE)
-   */
   async function exec(sql: string): Promise<void> {
     const worker = await init();
     await worker.exec(sql);
   }
 
-  /**
-   * Get a single row by query
-   */
   async function queryOne<T = any>(
     sql: string,
     params?: any[],
@@ -611,9 +435,6 @@ export function usePgWorker() {
     return result.rows[0] || null;
   }
 
-  /**
-   * Create a live query that updates automatically
-   */
   async function liveQuery<T = any>(
     sql: string,
     params?: any[],
@@ -622,14 +443,11 @@ export function usePgWorker() {
     initialData: T[];
   }> {
     const worker = await init();
-
     const liveExtension = (worker as any).live;
     if (!liveExtension) {
       throw new Error("Live extension not available");
     }
-
     const liveResult = await liveExtension.query(sql, params);
-
     return {
       subscribe: (callback: (data: T[]) => void): (() => void) => {
         const unsubscribe = liveResult.subscribe((result: { rows: T[] }) => {
@@ -641,9 +459,6 @@ export function usePgWorker() {
     };
   }
 
-  /**
-   * Reset PGlite instance
-   */
   function reset(): void {
     resetPgWorker();
     isReady.value = false;
@@ -651,20 +466,14 @@ export function usePgWorker() {
     error.value = null;
   }
 
-  /**
-   * Get raw PGlite instance (for advanced use cases)
-   */
   async function getInstance(): Promise<PGliteWorker> {
     return await init();
   }
 
   return {
-    // State (readonly)
     isReady: readonly(isReady),
     isLoading: readonly(isLoading),
     error: readonly(error),
-
-    // Methods
     init,
     query,
     queryOne,
@@ -672,8 +481,6 @@ export function usePgWorker() {
     liveQuery,
     reset,
     getInstance,
-
-    // Raw instance getter
     get instance() {
       return pgInstance;
     },
