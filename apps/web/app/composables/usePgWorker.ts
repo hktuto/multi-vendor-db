@@ -9,23 +9,14 @@ let pgInstance: PGliteWorker | null = null;
 let initPromise: Promise<PGliteWorker> | null = null;
 
 /**
- * PGlite Migration from server
+ * Journal entry from _journal.json
  */
-interface ServerMigration {
-  name: string;
+interface JournalEntry {
+  idx: number;
+  version: string;
+  when: number;
   tag: string;
-  index: number;
-  sql: string;
-}
-
-/**
- * Migration check response from server
- */
-interface MigrationCheckResponse {
-  migrations: ServerMigration[];
-  needsReset: boolean;
-  latestMigration: string | null;
-  totalCount: number;
+  breakpoints: boolean;
 }
 
 /**
@@ -38,7 +29,6 @@ async function getLastAppliedMigration(pg: PGliteWorker): Promise<string | null>
     );
     return result.rows[0]?.migration_name || null;
   } catch {
-    // Table doesn't exist yet
     return null;
   }
 }
@@ -60,35 +50,45 @@ async function recordMigration(
 }
 
 /**
- * Check migrations with server and get needed SQL
+ * Fetch journal.json from public directory
  */
-async function checkMigrationsWithServer(
-  lastMigration: string | null
-): Promise<MigrationCheckResponse> {
-  const response = await $fetch<MigrationCheckResponse>(
-    '/api/pglite/migrations/check',
-    {
-      method: 'POST',
-      body: { lastMigration },
-    }
-  );
-  return response;
+async function fetchJournal(): Promise<{ entries: JournalEntry[] } | null> {
+  try {
+    const response = await fetch('/.data/db/migrations/postgresql/meta/_journal.json');
+    if (!response.ok) throw new Error('Journal not found');
+    return await response.json();
+  } catch (error) {
+    console.error('[usePgWorker] Failed to fetch journal:', error);
+    return null;
+  }
 }
 
 /**
- * Reset all local tables (for schema mismatch)
+ * Fetch migration SQL from public directory
+ */
+async function fetchMigrationSql(tag: string): Promise<string | null> {
+  try {
+    const response = await fetch(`/.data/db/migrations/postgresql/${tag}.sql`);
+    if (!response.ok) throw new Error(`SQL not found for ${tag}`);
+    return await response.text();
+  } catch (error) {
+    console.error(`[usePgWorker] Failed to fetch SQL for ${tag}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Reset all local tables
  */
 async function resetDatabase(pg: PGliteWorker): Promise<void> {
   console.log('[usePgWorker] Resetting database...');
 
-  // Get all tables
   const result = await pg.query<{ table_name: string }>(
     `SELECT table_name FROM information_schema.tables 
      WHERE table_schema = 'public' 
      AND table_type = 'BASE TABLE'`
   );
 
-  // Drop all tables
   for (const row of result.rows) {
     await pg.exec(`DROP TABLE IF EXISTS "${row.table_name}" CASCADE`);
     console.log(`[usePgWorker] Dropped: ${row.table_name}`);
@@ -98,42 +98,66 @@ async function resetDatabase(pg: PGliteWorker): Promise<void> {
 }
 
 /**
- * Run migrations from server
+ * Run migrations
  */
 async function runMigrations(pg: PGliteWorker): Promise<void> {
-  console.log('[usePgWorker] Checking migrations with server...');
+  console.log('[usePgWorker] Checking migrations...');
 
-  // Get last applied migration
+  const journal = await fetchJournal();
+  if (!journal) {
+    console.error('[usePgWorker] No journal found');
+    return;
+  }
+
+  // Sort entries by index
+  const sortedEntries = journal.entries.sort((a, b) => a.idx - b.idx);
+  
   const lastMigration = await getLastAppliedMigration(pg);
   console.log(`[usePgWorker] Last applied: ${lastMigration || 'none'}`);
 
-  // Check with server
-  const check = await checkMigrationsWithServer(lastMigration);
+  // Check if reset needed
+  let needsReset = false;
+  let startFromIndex = 0;
 
-  // Handle reset request
-  if (check.needsReset) {
-    await resetDatabase(pg);
-    // Re-check after reset (should get all migrations)
-    const recheck = await checkMigrationsWithServer(null);
-    check.migrations = recheck.migrations;
+  if (lastMigration) {
+    const clientIndex = sortedEntries.findIndex(e => e.tag === lastMigration);
+    if (clientIndex === -1) {
+      needsReset = true;
+      console.log(`[usePgWorker] Migration ${lastMigration} not found, resetting`);
+    } else {
+      startFromIndex = clientIndex + 1;
+    }
   }
 
-  // Apply migrations
-  if (check.migrations.length === 0) {
+  if (needsReset) {
+    await resetDatabase(pg);
+    startFromIndex = 0;
+  }
+
+  // Apply needed migrations
+  const entriesToApply = sortedEntries.slice(startFromIndex);
+  
+  if (entriesToApply.length === 0) {
     console.log('[usePgWorker] No migrations to apply');
     return;
   }
 
-  console.log(`[usePgWorker] Applying ${check.migrations.length} migrations...`);
+  console.log(`[usePgWorker] Applying ${entriesToApply.length} migrations...`);
 
-  for (const migration of check.migrations) {
+  for (const entry of entriesToApply) {
+    const sql = await fetchMigrationSql(entry.tag);
+    if (!sql) {
+      console.error(`[usePgWorker] SQL not found for ${entry.tag}`);
+      continue;
+    }
+
     try {
-      console.log(`[usePgWorker] Applying: ${migration.tag}`);
-      await pg.exec(migration.sql);
-      await recordMigration(pg, migration.tag);
-      console.log(`[usePgWorker] Applied: ${migration.tag}`);
+      console.log(`[usePgWorker] Applying: ${entry.tag}`);
+      await pg.exec(sql);
+      await recordMigration(pg, entry.tag);
+      console.log(`[usePgWorker] Applied: ${entry.tag}`);
     } catch (error) {
-      console.error(`[usePgWorker] Failed to apply ${migration.tag}:`, error);
+      console.error(`[usePgWorker] Failed to apply ${entry.tag}:`, error);
       throw error;
     }
   }
@@ -145,13 +169,8 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
  * Get or create PGlite Worker instance
  */
 export async function getPgWorker(): Promise<PGliteWorker> {
-  if (pgInstance) {
-    return pgInstance;
-  }
-
-  if (initPromise) {
-    return initPromise;
-  }
+  if (pgInstance) return pgInstance;
+  if (initPromise) return initPromise;
 
   initPromise = createPgWorker();
 
@@ -168,24 +187,17 @@ async function createPgWorker(): Promise<PGliteWorker> {
   console.log('[usePgWorker] Creating PGlite Worker...');
 
   const worker = new PGliteWorker(
-    new Worker('/worker/pglite.worker.js', {
-      type: 'module',
-    }),
+    new Worker('/worker/pglite.worker.js', { type: 'module' }),
     {
       dataDir: 'idb://multi-vendor-db',
-      extensions: {
-        live,
-        electric: electricSync(),
-      },
+      extensions: { live, electric: electricSync() },
     }
   );
 
   await worker.waitReady;
   console.log('[usePgWorker] PGlite Worker ready');
 
-  // Run migrations
   await runMigrations(worker);
-
   return worker;
 }
 
@@ -207,7 +219,7 @@ export interface QueryResult<T = any> {
 }
 
 /**
- * Composable wrapper for convenience
+ * Composable wrapper
  */
 export function usePgWorker() {
   const isReady = useState('pg-worker-ready', () => false);
@@ -232,16 +244,10 @@ export function usePgWorker() {
     }
   }
 
-  async function query<T = any>(
-    sql: string,
-    params?: any[]
-  ): Promise<QueryResult<T>> {
+  async function query<T = any>(sql: string, params?: any[]): Promise<QueryResult<T>> {
     const worker = await init();
     const result = await worker.query<T>(sql, params);
-    return {
-      rows: result.rows || [],
-      affectedRows: result.affectedRows,
-    };
+    return { rows: result.rows || [], affectedRows: result.affectedRows };
   }
 
   async function exec(sql: string): Promise<void> {
@@ -249,33 +255,23 @@ export function usePgWorker() {
     await worker.exec(sql);
   }
 
-  async function queryOne<T = any>(
-    sql: string,
-    params?: any[]
-  ): Promise<T | null> {
+  async function queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
     const result = await query<T>(sql, params);
     return result.rows[0] || null;
   }
 
-  async function liveQuery<T = any>(
-    sql: string,
-    params?: any[]
-  ): Promise<{
+  async function liveQuery<T = any>(sql: string, params?: any[]): Promise<{
     subscribe: (callback: (data: T[]) => void) => () => void;
     initialData: T[];
   }> {
     const worker = await init();
     const liveExtension = (worker as any).live;
-    if (!liveExtension) {
-      throw new Error('Live extension not available');
-    }
+    if (!liveExtension) throw new Error('Live extension not available');
+    
     const liveResult = await liveExtension.query(sql, params);
     return {
-      subscribe: (callback: (data: T[]) => void): (() => void) => {
-        const unsubscribe = liveResult.subscribe((result: { rows: T[] }) => {
-          callback(result.rows);
-        });
-        return unsubscribe;
+      subscribe: (callback: (data: T[]) => void) => {
+        return liveResult.subscribe((result: { rows: T[] }) => callback(result.rows));
       },
       initialData: liveResult.rows,
     };
@@ -288,10 +284,6 @@ export function usePgWorker() {
     error.value = null;
   }
 
-  async function getInstance(): Promise<PGliteWorker> {
-    return await init();
-  }
-
   return {
     isReady: readonly(isReady),
     isLoading: readonly(isLoading),
@@ -302,10 +294,8 @@ export function usePgWorker() {
     exec,
     liveQuery,
     reset,
-    getInstance,
-    get instance() {
-      return pgInstance;
-    },
+    getInstance: init,
+    get instance() { return pgInstance; },
   };
 }
 
