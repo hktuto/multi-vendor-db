@@ -151,7 +151,7 @@ async function tableExists(
     )`,
     [tableName],
   );
-  return result.rows[0]?.exists === true;
+  return (result.rows[0] as { exists?: boolean } | undefined)?.exists === true;
 }
 
 /**
@@ -171,7 +171,7 @@ async function columnExists(
     )`,
     [tableName, columnName],
   );
-  return result.rows[0]?.exists === true;
+  return (result.rows[0] as { exists?: boolean } | undefined)?.exists === true;
 }
 
 /**
@@ -202,7 +202,7 @@ async function batchCheckTablesExist(pg: PGliteWorker): Promise<Set<string>> {
      AND table_name = ANY($1)`,
     [AUTO_CREATE_TABLES],
   );
-  return new Set(result.rows.map((r) => r.table_name));
+  return new Set(result.rows.map((r: { table_name: string }) => r.table_name));
 }
 
 /**
