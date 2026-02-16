@@ -33,7 +33,7 @@ export interface SyncedCompanyMember {
 /**
  * Invite link data structure - one invite per email
  */
-export interface SyncedInviteLinkLink {
+export interface SyncedInviteLink {
   id: string;
   company_id: string;
   created_by: string;

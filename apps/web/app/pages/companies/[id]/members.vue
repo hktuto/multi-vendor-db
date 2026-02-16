@@ -264,7 +264,7 @@ async function addMember() {
         addMemberForm.email = "";
         addMemberForm.role = "member";
         addMemberModalOpen.value = false;
-        await refreshMembers();
+        await loadMembers();
     } catch (error: any) {
         toast.add({
             title: "Error",
@@ -290,7 +290,7 @@ async function updateRole(userId: string, newRole: "admin" | "member") {
             color: "success",
         });
 
-        await refreshMembers();
+        await loadMembers();
     } catch (error: any) {
         toast.add({
             title: "Error",
@@ -336,7 +336,7 @@ async function confirmRemove() {
         if (memberToRemove.value.isSelf) {
             router.push("/companies");
         } else {
-            await refreshMembers();
+            await loadMembers();
         }
     } catch (error: any) {
         toast.add({
@@ -382,7 +382,7 @@ async function createInvite() {
         });
 
         createdInvite.value = response.invite;
-        await refreshInvites();
+        await loadInvites();
 
         toast.add({
             title: "Invite created",
@@ -412,7 +412,7 @@ async function cancelInvite(token: string) {
             color: "success",
         });
 
-        await refreshInvites();
+        await loadInvites();
     } catch (error: any) {
         toast.add({
             title: "Error",
@@ -506,7 +506,7 @@ function closeInviteModal() {
                                 color="neutral"
                                 variant="ghost"
                                 icon="i-lucide-refresh-cw"
-                                @click="refreshMembers()"
+                                @click="loadMembers()"
                             />
                         </div>
                     </template>
@@ -535,7 +535,7 @@ function closeInviteModal() {
                                     variant="ghost"
                                     icon="i-lucide-refresh-cw"
                                     :loading="invitesPending"
-                                    @click="refreshInvites()"
+                                    @click="loadInvites()"
                                 />
                                 <UButton
                                     color="primary"
@@ -585,27 +585,24 @@ function closeInviteModal() {
                                             {{ invite.role }}
                                         </UBadge>
                                         <span
-                                            v-if="invite.maxUses"
+                                            v-if="invite.email"
                                             class="text-xs text-dimmed"
                                         >
-                                            {{ invite.usedCount }}/{{
-                                                invite.maxUses
-                                            }}
-                                            uses
+                                            {{ invite.email }}
                                         </span>
                                     </div>
                                     <p class="text-xs text-dimmed mt-1">
                                         Created
                                         {{
                                             new Date(
-                                                invite.createdAt,
+                                                invite.created_at,
                                             ).toLocaleDateString()
                                         }}
-                                        <span v-if="invite.expiresAt">
+                                        <span v-if="invite.expires_at">
                                             · Expires
                                             {{
                                                 new Date(
-                                                    invite.expiresAt,
+                                                    invite.expires_at,
                                                 ).toLocaleDateString()
                                             }}
                                         </span>
@@ -619,7 +616,7 @@ function closeInviteModal() {
                                     variant="ghost"
                                     size="sm"
                                     icon="i-lucide-copy"
-                                    @click="copyInviteLink(invite.inviteUrl)"
+                                    @click="copyInviteLink(invite.token)"
                                 />
                                 <UButton
                                     color="error"
