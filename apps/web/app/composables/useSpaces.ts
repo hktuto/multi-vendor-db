@@ -110,7 +110,7 @@ const _useSpaces = () => {
   const electric = useElectricSync();
   const pg = usePgWorker();
   const { currentUser } = useCurrentUser();
-  const { allCompanies } = useCompanies();
+  const { allCompanies, currentCompanyId } = useCompanies();
 
   // Global state - current selected space
   const currentSpaceId = useState<string | null>("spaces-current-id", () => null);
@@ -133,6 +133,49 @@ const _useSpaces = () => {
     if (!currentSpaceId.value) return undefined;
     return allSpaces.value.find((s) => s.id === currentSpaceId.value);
   });
+
+  /**
+   * Spaces filtered by current company
+   * Auto-updates when currentCompany changes (no re-sync needed)
+   */
+  const currentCompanySpaces = computed<SyncedSpace[]>(() => {
+    if (!currentCompanyId.value) return [];
+    return allSpaces.value
+      .filter((s) => s.company_id === currentCompanyId.value)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  /**
+   * Watch for company changes and auto-adjust current space
+   * - If current space belongs to new company: keep it
+   * - If not: switch to first space of new company (or null if none)
+   */
+  watch(
+    () => currentCompanyId.value,
+    (newCompanyId, oldCompanyId) => {
+      if (!newCompanyId) {
+        // No company selected, clear current space
+        currentSpaceId.value = null;
+        return;
+      }
+
+      // Check if current space belongs to new company
+      const currentSpaceBelongsToCompany = currentSpace.value?.company_id === newCompanyId;
+      
+      if (!currentSpaceBelongsToCompany) {
+        // Current space not in new company, switch to first available
+        const firstSpace = currentCompanySpaces.value[0];
+        if (firstSpace) {
+          console.log(`[useSpaces] Company changed ${oldCompanyId} -> ${newCompanyId}, switching to space: ${firstSpace.name}`);
+          currentSpaceId.value = firstSpace.id;
+        } else {
+          console.log(`[useSpaces] Company changed ${oldCompanyId} -> ${newCompanyId}, no spaces available`);
+          currentSpaceId.value = null;
+        }
+      }
+    },
+    { immediate: true }
+  );
 
   /**
    * Get current user's role in a space
@@ -422,6 +465,7 @@ const _useSpaces = () => {
     allSpaces,
     currentSpaceId,
     currentSpace,
+    currentCompanySpaces, // ← 新增：當前公司的 spaces 列表
     isLoading,
     isSyncing,
     syncError,
