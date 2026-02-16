@@ -85,107 +85,96 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="p-6 max-w-6xl mx-auto">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
-      <div>
-        <h1 class="text-2xl font-bold">Spaces</h1>
-        <p class="text-gray-500 dark:text-gray-400">
-          Manage your workspaces across all companies
-        </p>
-      </div>
-      <UButton
-        icon="i-lucide-plus"
-        label="Create Space"
-        @click="showCreateModal = true"
-      />
-    </div>
+  <UDashboardPanel id="spaces">
+    <template #header>
+      <UDashboardNavbar title="Spaces">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+        <template #right>
+          <UButton color="primary" icon="i-lucide-plus" @click="showCreateModal = true">
+            New Space
+          </UButton>
+        </template>
+      </UDashboardNavbar>
+    </template>
 
-    <!-- Loading -->
-    <div v-if="isLoading" class="flex justify-center py-12">
-      <ULoadingIcon size="lg" />
-    </div>
-
-    <!-- Empty State -->
-    <div
-      v-else-if="allSpaces.length === 0"
-      class="text-center py-12 bg-gray-50 dark:bg-gray-800 rounded-lg"
-    >
-      <UIcon name="i-lucide-layout-grid" class="w-16 h-16 mx-auto mb-4 text-gray-400" />
-      <h3 class="text-lg font-medium mb-2">No spaces yet</h3>
-      <p class="text-gray-500 dark:text-gray-400 mb-6">
-        Create your first space to start organizing your work
-      </p>
-      <UButton
-        icon="i-lucide-plus"
-        label="Create Space"
-        @click="showCreateModal = true"
-      />
-    </div>
-
-    <!-- Spaces by Company -->
-    <div v-else class="space-y-8">
-      <div
-        v-for="[companyId, spaces] in spacesByCompany"
-        :key="companyId"
-      >
-        <!-- Company Header -->
-        <div class="flex items-center gap-2 mb-4">
-          <div class="w-8 h-8 rounded bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
-            <UIcon name="i-lucide-building-2" class="w-4 h-4 text-primary-600" />
-          </div>
-          <h2 class="text-lg font-semibold">{{ getCompanyName(companyId) }}</h2>
+    <template #body>
+      <UContainer class="py-6">
+        <!-- Loading -->
+        <div v-if="isLoading" class="flex justify-center py-12">
+          <ULoadingIcon size="lg" />
         </div>
 
-        <!-- Spaces Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <UCard
-            v-for="space in spaces"
-            :key="space.id"
-            class="cursor-pointer hover:shadow-md transition-shadow"
-            :class="{ 'ring-2 ring-primary-500': currentSpaceId === space.id }"
-            @click="goToSpace(space.id)"
-          >
-            <div class="flex items-start gap-3">
-              <div
-                class="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
-                :style="{ backgroundColor: space.color || '#e5e7eb' }"
-              >
-                {{ space.icon || "📁" }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <h3 class="font-medium truncate">{{ space.name }}</h3>
-                <p
-                  v-if="space.description"
-                  class="text-sm text-gray-500 dark:text-gray-400 truncate"
-                >
-                  {{ space.description }}
-                </p>
-                <p class="text-xs text-gray-400 mt-1">
-                  Created {{ new Date(space.created_at).toLocaleDateString() }}
-                </p>
-              </div>
+        <!-- Empty State -->
+        <UCard v-else-if="allSpaces.length === 0" class="text-center py-12">
+          <div class="flex flex-col items-center gap-4">
+            <div class="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+              <UIcon name="i-lucide-layout-grid" class="text-3xl text-dimmed" />
             </div>
-          </UCard>
+            <div>
+              <h3 class="text-lg font-semibold">No spaces yet</h3>
+              <p class="text-dimmed mt-1">Create your first space to start organizing your work</p>
+            </div>
+            <UButton color="primary" icon="i-lucide-plus" @click="showCreateModal = true">
+              Create Space
+            </UButton>
+          </div>
+        </UCard>
+
+        <!-- Spaces by Company -->
+        <div v-else class="space-y-8">
+          <div
+            v-for="[companyId, spaces] in spacesByCompany"
+            :key="companyId"
+          >
+            <!-- Company Header -->
+            <div class="flex items-center gap-2 mb-4">
+              <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <UIcon name="i-lucide-building-2" class="w-4 h-4 text-primary" />
+              </div>
+              <h2 class="text-lg font-semibold">{{ getCompanyName(companyId) }}</h2>
+            </div>
+
+            <!-- Spaces Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <UCard
+                v-for="space in spaces"
+                :key="space.id"
+                class="cursor-pointer hover:shadow-md transition-shadow"
+                :class="{ 'ring-2 ring-primary-500': currentSpaceId === space.id }"
+                @click="goToSpace(space.id)"
+              >
+                <div class="flex items-start gap-3">
+                  <div
+                    class="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
+                    :style="{ backgroundColor: space.color || 'var(--color-muted)' }"
+                  >
+                    {{ space.icon || "📁" }}
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <h3 class="font-medium truncate">{{ space.name }}</h3>
+                    <p
+                      v-if="space.description"
+                      class="text-sm text-dimmed truncate"
+                    >
+                      {{ space.description }}
+                    </p>
+                    <p class="text-xs text-muted mt-1">
+                      Created {{ new Date(space.created_at).toLocaleDateString() }}
+                    </p>
+                  </div>
+                </div>
+              </UCard>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </UContainer>
+    </template>
 
     <!-- Create Space Modal -->
-    <UModal v-model="showCreateModal">
-      <UCard class="w-full max-w-md">
-        <template #header>
-          <div class="flex items-center justify-between">
-            <h3 class="text-lg font-medium">Create New Space</h3>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-x"
-              @click="showCreateModal = false"
-            />
-          </div>
-        </template>
-
+    <UModal v-model:open="showCreateModal" title="Create New Space">
+      <template #body>
         <form class="space-y-4" @submit.prevent="createSpace">
           <UFormGroup label="Company" required>
             <USelectMenu
@@ -194,6 +183,7 @@ onMounted(() => {
               option-attribute="name"
               value-attribute="id"
               placeholder="Select a company"
+              class="w-full"
             />
           </UFormGroup>
 
@@ -202,6 +192,7 @@ onMounted(() => {
               v-model="newSpaceName"
               placeholder="e.g., Marketing Team"
               maxlength="255"
+              class="w-full"
             />
           </UFormGroup>
 
@@ -210,28 +201,24 @@ onMounted(() => {
               v-model="newSpaceDescription"
               placeholder="What is this space for?"
               :rows="3"
+              class="w-full"
             />
           </UFormGroup>
         </form>
-
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton
-              color="neutral"
-              variant="ghost"
-              label="Cancel"
-              @click="showCreateModal = false"
-            />
-            <UButton
-              color="primary"
-              label="Create"
-              :loading="isCreating"
-              :disabled="!newSpaceName || !selectedCompanyId"
-              @click="createSpace"
-            />
-          </div>
-        </template>
-      </UCard>
+      </template>
+      <template #footer>
+        <UButton color="neutral" variant="ghost" @click="showCreateModal = false">
+          Cancel
+        </UButton>
+        <UButton
+          color="primary"
+          :loading="isCreating"
+          :disabled="!newSpaceName || !selectedCompanyId"
+          @click="createSpace"
+        >
+          Create Space
+        </UButton>
+      </template>
     </UModal>
-  </div>
+  </UDashboardPanel>
 </template>
