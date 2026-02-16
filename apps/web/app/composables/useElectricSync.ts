@@ -80,6 +80,9 @@ interface SharedShapeInstance {
 // Shared shape instances - keyed by shapeKey
 const sharedShapes = new Map<string, SharedShapeInstance>();
 
+// In-flight shape creation promises - prevents race condition when multiple components subscribe simultaneously
+const inflightShapePromises = new Map<string, Promise<SharedShapeInstance>>();
+
 // Global sync state
 const globalIsSyncing = ref(false);
 const globalError = ref<Error | null>(null);
@@ -129,6 +132,7 @@ async function dispatchEvent<T extends Record<string, any>>(
 
 /**
  * Create a shared shape instance (if not exists) or return existing one
+ * Uses in-flight promise to prevent race conditions when multiple components subscribe simultaneously
  */
 async function getOrCreateSharedShape(
   table: string,
@@ -137,6 +141,41 @@ async function getOrCreateSharedShape(
   primaryKey: string[]
 ): Promise<SharedShapeInstance> {
   // Return existing shared shape if already created
+  const existing = sharedShapes.get(shapeKey);
+  if (existing) {
+    return existing;
+  }
+
+  // Check if there's already an in-flight creation promise for this shapeKey
+  const inflight = inflightShapePromises.get(shapeKey);
+  if (inflight) {
+    // Wait for the existing creation to complete
+    return await inflight;
+  }
+
+  // Create new shared shape - wrap in a promise and track it
+  const creationPromise = createSharedShape(table, shapeKey, shapeUrl, primaryKey);
+  inflightShapePromises.set(shapeKey, creationPromise);
+
+  try {
+    const sharedShape = await creationPromise;
+    return sharedShape;
+  } finally {
+    // Clean up in-flight promise regardless of success or failure
+    inflightShapePromises.delete(shapeKey);
+  }
+}
+
+/**
+ * Actually create the shared shape instance (internal implementation)
+ */
+async function createSharedShape(
+  table: string,
+  shapeKey: string,
+  shapeUrl: string,
+  primaryKey: string[]
+): Promise<SharedShapeInstance> {
+  // Double-check if shape was created while we were waiting
   const existing = sharedShapes.get(shapeKey);
   if (existing) {
     return existing;
