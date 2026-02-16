@@ -105,13 +105,13 @@ pages/
 
 ## Tasks
 
-- [ ] Create company list page (synced)
-- [ ] Create company dashboard page
-- [ ] Build member management UI with sync
-- [ ] Build invite flow UI with sync
-- [ ] Create company settings page with sync
-- [ ] Add real-time indicators (sync status)
-- [ ] Test offline → online sync
+- [x] Create company list page (synced)
+- [x] Create company dashboard page
+- [x] Build member management UI with sync
+- [x] Build invite flow UI with sync
+- [x] Create company settings page with sync
+- [x] Add real-time indicators (sync status)
+- [x] Test offline → online sync
 
 ## Implementation Log
 
