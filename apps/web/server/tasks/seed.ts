@@ -32,8 +32,10 @@ export default defineTask({
     const memberId = uuidv7()
     const groupId = uuidv7()
     const groupMemberId = uuidv7()
-    const workspaceId = uuidv7()
-    const folderId = uuidv7()
+    const spaceId = uuidv7()
+    const spaceMemberId = uuidv7()
+    const folderItemId = uuidv7()
+    const tableItemId = uuidv7()
     const inviteId = uuidv7()
 
     // Hash password using nuxt-auth-utils
@@ -129,60 +131,88 @@ export default defineTask({
 
     console.log('Added user to group')
 
-    // Create workspace
-    const [workspace] = await db.insert(schema.workspaces).values({
-      id: workspaceId,
+    // Create space (new unified design)
+    const [space] = await db.insert(schema.spaces).values({
+      id: spaceId,
       companyId: company.id,
-      name: 'Main Workspace',
-      description: 'Primary workspace for projects',
-      icon: 'lucide:layout-grid',
+      name: 'Main Space',
+      description: 'Primary space for projects and data',
+      icon: '🚀',
       color: '#3b82f6',
-      menu: [
-        {
-          id: 'folder-1',
-          type: 'folder',
-          itemId: folderId,
-          order: 0,
-          children: [],
-          permissions: {
-            read: [user.id],
-            readwrite: [user.id],
-            manage: [user.id]
-          }
-        }
-      ],
+      settings: {
+        defaultView: 'list',
+        sidebarCollapsed: false
+      },
       createdBy: user.id,
       createdAt: now,
       updatedAt: now
     }).returning()
 
-    console.log('Created workspace:', workspace.name)
+    console.log('Created space:', space.name)
 
-    // Create folder
-    const [folder] = await db.insert(schema.folders).values({
-      id: folderId,
-      companyId: company.id,
-      workspaceId: workspace.id,
+    // Add user as space admin
+    await db.insert(schema.spaceMembers).values({
+      id: spaceMemberId,
+      spaceId: space.id,
+      userId: user.id,
+      role: 'admin',
+      joinedAt: now,
+      invitedBy: null
+    })
+
+    console.log('Added user as space admin')
+
+    // Create folder item
+    const [folderItem] = await db.insert(schema.spaceItems).values({
+      id: folderItemId,
+      spaceId: space.id,
+      parentId: null,
+      type: 'folder',
       name: 'Projects',
-      icon: 'lucide:folder',
+      description: 'Project folders and tables',
+      icon: '📁',
       color: '#eab308',
       orderIndex: 0,
+      config: {
+        isExpanded: true
+      },
       createdBy: user.id,
       createdAt: now,
       updatedAt: now
     }).returning()
 
-    console.log('Created folder:', folder.name)
+    console.log('Created folder item:', folderItem.name)
+
+    // Create table item inside folder
+    const [tableItem] = await db.insert(schema.spaceItems).values({
+      id: tableItemId,
+      spaceId: space.id,
+      parentId: folderItem.id,
+      type: 'table',
+      name: 'Project List',
+      description: 'List of all projects',
+      icon: '📊',
+      color: '#10b981',
+      orderIndex: 0,
+      config: {
+        schemaId: null,
+        defaultView: 'grid'
+      },
+      createdBy: user.id,
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    console.log('Created table item:', tableItem.name)
 
     // Create invite link
     const [invite] = await db.insert(schema.inviteLinks).values({
       id: inviteId,
       companyId: company.id,
       createdBy: user.id,
+      email: null,
       token: 'sample-invite-token-123',
       role: 'member',
-      maxUses: 10,
-      usedCount: 0,
       isActive: true,
       createdAt: now
     }).returning()
@@ -195,14 +225,14 @@ export default defineTask({
     console.log('  Email: admin@example.com')
     console.log('  Password: admin123')
     console.log('  Company: Acme Corp')
-    console.log('  Workspace: Main Workspace')
+    console.log('  Space: Main Space')
 
     return { 
       result: 'Database seeded successfully',
       data: {
         user: { id: user.id, email: user.email },
         company: { id: company.id, name: company.name },
-        workspace: { id: workspace.id, name: workspace.name }
+        space: { id: space.id, name: space.name }
       }
     }
   }
