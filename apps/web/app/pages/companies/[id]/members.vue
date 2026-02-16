@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
+import type { SyncedCompanyMember, SyncedInvite } from "~/composables/useCompanies";
 
 definePageMeta({
     middleware: ["auth"],
@@ -12,18 +13,50 @@ const toast = useToast();
 const companyId = route.params.id as string;
 
 // Use synced company data
-const { currentCompany, allCompanies, members: syncedMembers, switchCompany, isLoading: syncLoading } = useCompanies();
+const { currentCompany, allCompanies, switchCompany, isLoading: syncLoading, onMembersChange, onInvitesChange } = useCompanies();
 const { role, isOwner, canManage } = useCurrentCompanyRole();
+const { user: currentUser } = useCurrentUser();
+
+// Local state for members and invites (queried on-demand)
+const members = ref<SyncedCompanyMember[]>([]);
+const invites = ref<SyncedInvite[]>([]);
+const isLoadingMembers = ref(false);
+const isLoadingInvites = ref(false);
 
 // Switch to this company if not already current
 onMounted(() => {
     if (currentCompany.value?.id !== companyId) {
         switchCompany(companyId);
     }
+    loadMembers();
+    loadInvites();
+
+    // Register change callbacks
+    const unsubMembers = onMembersChange(() => loadMembers());
+    const unsubInvites = onInvitesChange(() => loadInvites());
+
+    onUnmounted(() => {
+        unsubMembers();
+        unsubInvites();
+    });
 });
 
+async function loadMembers() {
+    isLoadingMembers.value = true;
+    members.value = await useCompanies().queryMembers(companyId);
+    isLoadingMembers.value = false;
+}
+
+async function loadInvites() {
+    isLoadingInvites.value = true;
+    invites.value = await useCompanies().queryInvites(companyId, 'pending');
+    isLoadingInvites.value = false;
+}
+
+const invitesPending = computed(() => isLoadingInvites.value);
+
 // Get company from synced data
-const company = computed(() => 
+const company = computed(() =>
     allCompanies.value.find(c => c.id === companyId) || null
 );
 
@@ -48,10 +81,6 @@ const navItems = computed(() => [
     { label: "Members", to: `/companies/${companyId}/members` },
 ]);
 
-// Use synced members data
-const members = computed(() => syncedMembers.value);
-const membersPending = computed(() => syncLoading.value);
-
 // Fetch invites (not yet synced - using API)
 const {
     data: invitesData,
@@ -59,6 +88,8 @@ const {
     refresh: refreshInvites,
 } = await useFetch(`/api/companies/${companyId}/invites`);
 const invites = computed(() => invitesData.value?.invites || []);
+
+const { user: currentUser } = useCurrentUser();
 
 const { user: currentUser } = useCurrentUser();
 
