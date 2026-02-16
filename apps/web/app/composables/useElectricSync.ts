@@ -203,6 +203,7 @@ async function createSharedShape(
     },
     onError: (error: Error | any) => {
       const err = error instanceof Error ? error : new Error(String(error));
+      console.error(`[useElectricSync] syncShapeToTable error for ${shapeKey}:`, err);
       globalError.value = err;
       globalIsSyncing.value = false;
       dispatchEvent(shapeKey, 'error', undefined, err);
@@ -231,7 +232,16 @@ async function createSharedShape(
 
   // 4. Subscribe to shape changes and dispatch to all registered callbacks
   const shapeUnsubscribe = shapeInstance.subscribe(async (messages) => {
-    for (const message of messages) {
+    // Handle both single message and array of messages
+    const messageArray = Array.isArray(messages) ? messages : [messages];
+    
+    for (const message of messageArray) {
+      // Skip if message is not valid
+      if (!message || typeof message !== 'object') {
+        console.warn('[useElectricSync] Invalid message received:', message);
+        continue;
+      }
+      
       const operation = message.headers?.operation;
       
       switch (operation) {
