@@ -11,7 +11,7 @@ export interface SyncedCompany {
   name: string;
   slug: string;
   owner_id: string;
-  plan: 'basic' | 'pro' | 'enterprise' | string;  // SaaS plan control
+  plan: "basic" | "pro" | "enterprise" | string; // SaaS plan control
   settings: Record<string, any>;
   created_at: string;
   updated_at: string;
@@ -37,9 +37,9 @@ export interface SyncedInviteLinkLink {
   id: string;
   company_id: string;
   created_by: string;
-  email: string | null;  // NEW: One invite per email
+  email: string | null; // NEW: One invite per email
   token: string;
-  role: 'admin' | 'member';
+  role: "admin" | "member";
   expires_at: string | null;
   created_at: string;
   used_at: string | null;
@@ -88,7 +88,7 @@ const _useCompanies = () => {
   // Global state - current selected company
   const currentCompanyId = useState<string | null>(
     "companies-current-id",
-    () => null
+    () => null,
   );
 
   // Data - only companies are global state
@@ -96,7 +96,10 @@ const _useCompanies = () => {
   // Members and invite links are queried on-demand, not stored in global state
   // But we track if sync is active for these tables
   const membersSyncActive = useState("companies-members-sync", () => false);
-  const inviteLinksSyncActive = useState("companies-invite-links-sync", () => false);
+  const inviteLinksSyncActive = useState(
+    "companies-invite-links-sync",
+    () => false,
+  );
 
   // Status
   const isLoading = useState("companies-loading", () => false);
@@ -150,14 +153,16 @@ const _useCompanies = () => {
   /**
    * Query members for a specific company (on-demand)
    */
-  async function queryMembers(companyId?: string): Promise<SyncedCompanyMember[]> {
+  async function queryMembers(
+    companyId?: string,
+  ): Promise<SyncedCompanyMember[]> {
     const cid = companyId || currentCompanyId.value;
     if (!cid) return [];
 
     const worker = await pg.init();
     const result = await worker.query<SyncedCompanyMember>(
       "SELECT * FROM company_members WHERE company_id = $1 ORDER BY joined_at DESC",
-      [cid]
+      [cid],
     );
     return result.rows;
   }
@@ -167,8 +172,8 @@ const _useCompanies = () => {
    */
   async function queryInviteLinks(
     companyId?: string,
-    isActive?: boolean
-  ): Promise<SyncedInviteLink[]> {
+    isActive?: boolean,
+  ): Promise<any[]> {
     const cid = companyId || currentCompanyId.value;
     if (!cid) return [];
 
@@ -182,7 +187,7 @@ const _useCompanies = () => {
     }
     sql += " ORDER BY created_at DESC";
 
-    const result = await worker.query<SyncedInviteLink>(sql, params);
+    const result = await worker.query<any>(sql, params);
     return result.rows;
   }
 
@@ -204,7 +209,7 @@ const _useCompanies = () => {
   async function refreshCompanies(): Promise<SyncedCompany[]> {
     const worker = await pg.init();
     const result = await worker.query<SyncedCompany>(
-      "SELECT * FROM companies WHERE deleted_at IS NULL ORDER BY name"
+      "SELECT * FROM companies WHERE deleted_at IS NULL ORDER BY name",
     );
     allCompanies.value = result.rows;
     return result.rows;
@@ -216,8 +221,13 @@ const _useCompanies = () => {
   async function checkRole(
     userId: string,
     companyId?: string,
-    requiredRole?: "owner" | "admin" | "member"
-  ): Promise<{ role: string | null; isOwner: boolean; isAdmin: boolean; canManage: boolean }> {
+    requiredRole?: "owner" | "admin" | "member",
+  ): Promise<{
+    role: string | null;
+    isOwner: boolean;
+    isAdmin: boolean;
+    canManage: boolean;
+  }> {
     const cid = companyId || currentCompanyId.value;
     if (!cid || !userId) {
       return { role: null, isOwner: false, isAdmin: false, canManage: false };
@@ -226,7 +236,7 @@ const _useCompanies = () => {
     const worker = await pg.init();
     const result = await worker.query<{ role: string }>(
       "SELECT role FROM company_members WHERE company_id = $1 AND user_id = $2",
-      [cid, userId]
+      [cid, userId],
     );
 
     if (result.rows.length === 0) {
@@ -394,7 +404,9 @@ export function useCurrentCompanyRole() {
 
   const role = ref<string | null>(null);
   const isOwner = computed(() => role.value === "owner");
-  const isAdmin = computed(() => role.value === "admin" || role.value === "owner");
+  const isAdmin = computed(
+    () => role.value === "admin" || role.value === "owner",
+  );
   const isMember = computed(() => !!role.value);
   const canManage = isAdmin;
 
@@ -409,7 +421,7 @@ export function useCurrentCompanyRole() {
       const result = await companies.checkRole(userId, companyId);
       role.value = result.role;
     },
-    { immediate: true }
+    { immediate: true },
   );
 
   // Listen for members changes to update role
@@ -418,7 +430,7 @@ export function useCurrentCompanyRole() {
       if (companies.currentCompanyId.value && user.value?.id) {
         const result = await companies.checkRole(
           user.value.id,
-          companies.currentCompanyId.value
+          companies.currentCompanyId.value,
         );
         role.value = result.role;
       }
@@ -444,7 +456,9 @@ export function useCompanyQueries(companyId?: string) {
   const companies = useCompanies();
   const pg = usePgWorker();
 
-  const targetCompanyId = computed(() => companyId || companies.currentCompanyId.value);
+  const targetCompanyId = computed(
+    () => companyId || companies.currentCompanyId.value,
+  );
 
   // Local state for queries
   const members = ref<SyncedCompanyMember[]>([]);
@@ -468,15 +482,22 @@ export function useCompanyQueries(companyId?: string) {
   async function loadInviteLinks(isActive?: boolean) {
     if (!targetCompanyId.value) return;
     isLoadingInviteLinks.value = true;
-    inviteLinks.value = await companies.queryInviteLinks(targetCompanyId.value, isActive);
+    inviteLinks.value = await companies.queryInviteLinks(
+      targetCompanyId.value,
+      isActive,
+    );
     isLoadingInviteLinks.value = false;
   }
 
   // Auto-load when company changes
-  watch(targetCompanyId, () => {
-    loadMembers();
-    loadInviteLinks(true);
-  }, { immediate: true });
+  watch(
+    targetCompanyId,
+    () => {
+      loadMembers();
+      loadInviteLinks(true);
+    },
+    { immediate: true },
+  );
 
   // Listen for changes and reload
   onMounted(() => {
@@ -501,5 +522,6 @@ export function useCompanyQueries(companyId?: string) {
     isLoadingInviteLinks: readonly(isLoadingInviteLinks),
     loadMembers,
     loadInviteLinks,
+    queryInviteLinks: companies.queryInviteLinks,
   };
 }

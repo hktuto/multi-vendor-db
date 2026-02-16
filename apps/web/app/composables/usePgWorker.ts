@@ -126,8 +126,8 @@ const AUTO_CREATE_TABLES = [
   "user_group_members",
   "workspaces",
   "folders",
-  "invite_links"
-];];
+  "invite_links",
+];
 
 /**
  * Singleton PGlite instance

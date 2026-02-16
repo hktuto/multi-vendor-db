@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
-import type { SyncedCompanyMember, SyncedInvite } from "~/composables/useCompanies";
+import type {
+    SyncedCompanyMember,
+    SyncedInvite,
+} from "~/composables/useCompanies";
 
 definePageMeta({
     middleware: ["auth"],
@@ -13,7 +16,14 @@ const toast = useToast();
 const companyId = route.params.id as string;
 
 // Use synced company data
-const { currentCompany, allCompanies, switchCompany, isLoading: syncLoading, onMembersChange, onInvitesChange } = useCompanies();
+const {
+    currentCompany,
+    allCompanies,
+    switchCompany,
+    isLoading: syncLoading,
+    onMembersChange,
+    onInviteLinksChange,
+} = useCompanies();
 const { role, isOwner, canManage } = useCurrentCompanyRole();
 const { user: currentUser } = useCurrentUser();
 
@@ -22,7 +32,7 @@ const members = ref<SyncedCompanyMember[]>([]);
 const invites = ref<SyncedInvite[]>([]);
 const isLoadingMembers = ref(false);
 const isLoadingInvites = ref(false);
-
+const companyComposabls = useCompanies();
 // Switch to this company if not already current
 onMounted(() => {
     if (currentCompany.value?.id !== companyId) {
@@ -33,7 +43,7 @@ onMounted(() => {
 
     // Register change callbacks
     const unsubMembers = onMembersChange(() => loadMembers());
-    const unsubInvites = onInvitesChange(() => loadInvites());
+    const unsubInvites = onInviteLinksChange(() => loadInvites());
 
     onUnmounted(() => {
         unsubMembers();
@@ -49,15 +59,15 @@ async function loadMembers() {
 
 async function loadInvites() {
     isLoadingInvites.value = true;
-    invites.value = await useCompanies().queryInvites(companyId, 'pending');
+    invites.value = await useCompanies().queryInviteLinks(companyId, true);
     isLoadingInvites.value = false;
 }
 
 const invitesPending = computed(() => isLoadingInvites.value);
 
 // Get company from synced data
-const company = computed(() =>
-    allCompanies.value.find(c => c.id === companyId) || null
+const company = computed(
+    () => allCompanies.value.find((c) => c.id === companyId) || null,
 );
 
 // Watch for company not found
@@ -80,18 +90,6 @@ const navItems = computed(() => [
     { label: "General", to: `/companies/${companyId}` },
     { label: "Members", to: `/companies/${companyId}/members` },
 ]);
-
-// Fetch invites (not yet synced - using API)
-const {
-    data: invitesData,
-    pending: invitesPending,
-    refresh: refreshInvites,
-} = await useFetch(`/api/companies/${companyId}/invites`);
-const invites = computed(() => invitesData.value?.invites || []);
-
-const { user: currentUser } = useCurrentUser();
-
-const { user: currentUser } = useCurrentUser();
 
 // Member table columns
 const columns: TableColumn<any>[] = [

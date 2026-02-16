@@ -38,7 +38,7 @@ export interface UseTableSyncOptions<T extends Record<string, any>> {
  * ```
  */
 export function useTableSync<T extends Record<string, any>>(
-  options: UseTableSyncOptions<T>
+  options: UseTableSyncOptions<T>,
 ) {
   const { table, callbacks = {}, autoRefresh = false } = options;
 
@@ -138,16 +138,16 @@ export function useTableSync<T extends Record<string, any>>(
    */
   async function liveQuery(
     sql: string,
-    params?: any[]
+    params?: any[],
   ): Promise<{
     initialData: T[];
-    subscribe: (callback: (rows: T[]) => void) => (() => void);
+    subscribe: (callback: (rows: T[]) => void) => () => void;
   }> {
     const worker = await pg.init();
     const liveExt = (worker as any).live;
-    
+
     if (!liveExt) {
-      throw new Error('Live extension not available');
+      throw new Error("Live extension not available");
     }
 
     const result = await liveExt.query(sql, params);
@@ -168,33 +168,18 @@ export function useTableSync<T extends Record<string, any>>(
     isSyncing: readonly(isSyncing),
     isUpToDate: readonly(isUpToDate),
     error: readonly(error),
-    
+
     // Data
     rows: readonly(rows),
-    
+
     // Methods
     refresh,
-    
+
     // Query helpers
     query,
     queryOne,
     liveQuery,
   };
-}
-
-/**
- * Pre-configured composables for specific tables
- * These wrap useTableSync with proper typing
- */
-
-export interface SyncedUser {
-  id: string;
-  email: string;
-  name: string | null;
-  avatar_url: string | null;
-  created_at: string;
-  updated_at: string;
-  [key: string]: any;
 }
 
 /**
@@ -211,12 +196,20 @@ export interface SyncedUser {
  * ```
  */
 export function useCurrentUser(options: SyncEventCallbacks<SyncedUser> = {}) {
-  const { rows, isSyncing, isUpToDate, error, refresh, query, queryOne, liveQuery } = 
-    useTableSync<SyncedUser>({
-      table: 'users',
-      callbacks: options,
-      autoRefresh: true,
-    });
+  const {
+    rows,
+    isSyncing,
+    isUpToDate,
+    error,
+    refresh,
+    query,
+    queryOne,
+    liveQuery,
+  } = useTableSync<SyncedUser>({
+    table: "users",
+    callbacks: options,
+    autoRefresh: true,
+  });
 
   // Get first user (current user) from synced data
   const user = computed(() => rows.value[0] || null);
@@ -233,48 +226,21 @@ export function useCurrentUser(options: SyncEventCallbacks<SyncedUser> = {}) {
   };
 }
 
-/**
- * Companies sync composable
- *
- * Usage:
- * ```ts
- * const { rows: companies, isSyncing } = useCompaniesSync()
- * ```
- */
-export interface SyncedCompany {
-  id: string;
-  name: string;
-  slug: string;
-  owner_id: string;
-  settings: Record<string, any>;
-  created_at: string;
-  updated_at: string;
-  [key: string]: any;
-}
-
-export function useCompaniesSync(options: SyncEventCallbacks<SyncedCompany> = {}) {
+export function useCompaniesSync(
+  options: SyncEventCallbacks<SyncedCompany> = {},
+) {
   return useTableSync<SyncedCompany>({
-    table: 'companies',
+    table: "companies",
     callbacks: options,
     autoRefresh: true,
   });
 }
 
-/**
- * Company members sync composable
- */
-export interface SyncedCompanyMember {
-  id: string;
-  company_id: string;
-  user_id: string;
-  role: 'owner' | 'admin' | 'member';
-  joined_at: string;
-  [key: string]: any;
-}
-
-export function useCompanyMembersSync(options: SyncEventCallbacks<SyncedCompanyMember> = {}) {
+export function useCompanyMembersSync(
+  options: SyncEventCallbacks<SyncedCompanyMember> = {},
+) {
   return useTableSync<SyncedCompanyMember>({
-    table: 'company_members',
+    table: "company_members",
     callbacks: options,
     autoRefresh: true,
   });
