@@ -3,7 +3,7 @@ export default defineNuxtConfig({
 
   devtools: { enabled: true },
   ssr:false,
-  modules: ["@nuxt/ui", "@nuxthub/core", "nuxt-auth-utils"],
+  modules: ["@nuxt/ui", "@nuxthub/core", "nuxt-auth-utils", "~/modules/pglite-migrations"],
 
   css: ["~/assets/css/main.css"],
 
