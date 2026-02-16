@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS companies (
 
 ### 3.3 Sync Shape Configuration
 
-Each composable manages its own sync shape:
+Each composable manages its own sync shape. The **table name is the unique identifier** for a shape - one table corresponds to exactly one shape:
 
 ```typescript
 // Example: useCompanySync
@@ -151,34 +151,44 @@ const shape = await pg.electric.syncShapeToTable({
   shape: {
     url: `${electricUrl}/v1/shape`,
     params: {
-      table: 'companies',
-      where: `id = '${companyId}'`
+      table: 'companies'
+      // Note: No 'where' clause - server-side proxy auth determines what data to sync
     }
   },
   table: 'companies',
-  primaryKey: ['id'],
-  shapeKey: `company-${companyId}`,
+  primaryKey: ['id']
+  // Note: No shapeKey - table name is the unique identifier
 });
 ```
 
-**Shape Keys:**
-- `user-${userId}` - User profile
-- `company-${companyId}` - Company data
-- `company-${companyId}-members` - Company members
-- `company-${companyId}-groups` - User groups
-- `company-${companyId}-workspaces` - Workspaces
+**Key Principles:**
+- **One table = one shape** - Prevents syncShapeToTable conflicts
+- **Table name as identifier** - No separate `shapeKey` needed
+- **Server-side filtering** - Proxy auth determines what data to sync, not client-side `where` clauses
+- **Client only specifies table** - The client requests which table to sync; access control happens server-side
+
+> **Note on Global State:** The sync system uses `window.__electricSharedShapes` for true global singleton storage. This ensures the shared shape registry survives Hot Module Replacement (HMR) during development, preventing duplicate sync subscriptions when code reloads.
 
 ### 3.4 Sync Relationships
+
+Components share underlying ShapeStream instances when subscribing to the same table:
 
 ```
 useFoundationSync (orchestrator)
 ├── useUserSync (always active)
 ├── useCompaniesSync (user's companies list)
-│   └── For each company:
-│       ├── useCompanySync (company details + members)
-│       ├── useUserGroupsSync (groups for company)
-│       └── useWorkspaceSync (workspaces + folders)
+│   └── All components share the same ShapeStream per table:
+│       ├── 'companies' table → shared ShapeStream
+│       ├── 'company_members' table → shared ShapeStream
+│       ├── 'user_groups' table → shared ShapeStream
+│       └── 'workspaces' table → shared ShapeStream
 ```
+
+**Shared Subscription Pattern:**
+- Multiple components subscribing to the same table **share the underlying ShapeStream**
+- Each component registers its own callbacks for updates
+- ShapeStream is only closed when all components unsubscribe
+- This prevents duplicate sync traffic and optimizes resource usage
 
 ### 3.5 Vite Configuration Updates
 
@@ -241,17 +251,30 @@ services:
 | Concern | Mitigation |
 |---------|------------|
 | Electric HTTP API exposed | Use API key + proxy through Nuxt API |
-| Sync data visibility | Implement auth on sync shapes (where clauses) |
+| Sync data visibility | Server-side proxy auth determines what data each user can sync |
 | Local data tampering | Treat PGlite as cache, validate on server write |
 
 **Auth Strategy:**
 ```typescript
-// shapes should filter by user's accessible data
-params: {
+// Client only specifies which table to sync
+// Server-side proxy auth determines what data the user can access
+const shape = await pg.electric.syncShapeToTable({
+  shape: {
+    url: `${electricUrl}/v1/shape`,
+    params: {
+      table: 'companies'
+      // No 'where' clause - filtering happens server-side based on auth token
+    }
+  },
   table: 'companies',
-  where: `id IN (SELECT company_id FROM company_members WHERE user_id = '${userId}')`
-}
+  primaryKey: ['id']
+});
 ```
+
+The proxy server validates the user's auth token and applies appropriate filters:
+- User only receives companies they are members of
+- Company members only see data for their assigned companies
+- Row-level security enforced at the proxy layer
 
 ### 4.4 Storage Limits
 
@@ -424,45 +447,823 @@ async function initSchema(pg: PGliteWorker) {
 }
 ```
 
-### Sync Composable Pattern
+### useElectricSync Pattern
 
 ```typescript
-// app/composables/useCompanySync.ts
-export function useCompanySync(companyId: string) {
-  const pg = usePGLite();
-  const syncStatus = ref<'idle' | 'syncing' | 'error'>('idle');
+// app/composables/useElectricSync.ts
+export function useElectricSync() {
+  const config = useRuntimeConfig();
+  const ELECTRIC_URL = config.public.electricUrl || "http://localhost:3000";
+
+  /**
+   * Subscribe to sync events for a table
+   *
+   * Multiple components can subscribe to the same table simultaneously.
+   * The underlying ShapeStream and syncShapeToTable are shared per table,
+   * but each component gets its own callbacks.
+   *
+   * @param config - Shape configuration (table, callbacks, etc.)
+   * @returns Unsubscribe function for this specific subscription
+   */
+  async function subscribe<T extends Record<string, any>>(
+    config: ShapeConfig
+  ): Promise<() => void> {
+    const { table, callbacks = {} } = config;
+    
+    // Get or create shared shape instance for this table
+    // If another component already subscribed to this table,
+    // it will reuse the existing ShapeStream + syncShapeToTable
+    const sharedShape = await getOrCreateSharedShape(table, url, pkArray);
+    
+    // Register this component's callbacks
+    const callbackId = generateCallbackId();
+    sharedShape.callbacks.set(callbackId, { id: callbackId, callbacks });
+    
+    // Events are dispatched to ALL registered callbacks
+    // when ShapeStream receives updates
+    
+    // Return unsubscribe function - only cleans up this component's callback
+    return () => {
+      sharedShape.callbacks.delete(callbackId);
+      maybeCleanupShape(table); // Only cleanup if no more subscribers
+    };
+  }
+
+  /**
+   * Get all in-flight promises for pending sync operations.
+   * Useful for preventing race conditions during navigation or HMR.
+   * Stored on window object to survive HMR.
+   */
+  function getInflightPromises(): Promise<void>[] {
+    return window.__electricInflightPromises || [];
+  }
   
-  onMounted(async () => {
-    if (!pg.value) return;
-    
-    syncStatus.value = 'syncing';
-    const electricUrl = useRuntimeConfig().public.electricUrl;
-    
-    try {
-      const shape = await pg.value.electric.syncShapeToTable({
-        shape: {
-          url: `${electricUrl}/v1/shape`,
-          params: {
-            table: 'companies',
-            where: `id = '${companyId}'`,
-          },
-        },
-        table: 'companies',
-        primaryKey: ['id'],
-        shapeKey: `company-${companyId}`,
-      });
-      
-      syncStatus.value = 'idle';
-      
-      onUnmounted(() => {
-        shape.unsubscribe();
-      });
-    } catch (error) {
-      syncStatus.value = 'error';
-      console.error('Sync error:', error);
+  return {
+    subscribe,
+    subscribeMany,
+    unsubscribe,
+    unsubscribeAll,
+    hasSubscription,
+    getSubscriberCount,  // see how many components are using a table
+    getSubscribedShapes,
+    getSubscribedTables,
+    isTableSubscribed,
+    isShapeUpToDate,     // check if initial sync is complete
+    getInflightPromises, // NEW: get pending sync promises
+    // Reactive state
+    isSyncing: readonly(globalIsSyncing),
+    error: readonly(globalError),
+  };
+}
+```
+
+### Multi-Component Subscription Example
+
+```typescript
+// Component A - User List
+const electric = useElectricSync();
+const unsubA = await electric.subscribe({
+  table: 'users',
+  callbacks: {
+    onInsert: (user) => console.log('A: New user', user),
+    onUpdate: (user) => console.log('A: Updated', user),
+  }
+});
+
+// Component B - User Avatar (same page, same table)
+const unsubB = await electric.subscribe({
+  table: 'users',  // Same table - shares underlying connection
+  callbacks: {
+    onUpdate: (user) => console.log('B: Avatar updated', user.avatar_url),
+  }
+});
+
+// Both A and B receive events from the same ShapeStream
+// Only ONE syncShapeToTable + ONE ShapeStream exists for 'users' table
+
+// Component A unmounts
+unsubA();  // B still receives events
+
+// Component B unmounts  
+unsubB();  // Now shape is fully cleaned up (no more subscribers)
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Always Hybrid Mode** | syncShapeToTable (data persistence) + ShapeStream (real-time events) are both enabled - always on, no option to disable |
+| **Table as Unique Identifier** | One ShapeStream per table, shared across all components subscribing to that table |
+| **No `shapeKey` Parameter** | Table name is the unique identifier; prevents syncShapeToTable conflicts |
+| **No Client `where` Clause** | Server-side proxy auth determines what data to sync; client only specifies table |
+| **Window Object Storage** | `window.__electricSharedShapes` and `window.__electricInflightPromises` survive HMR |
+| **Per-Component Callbacks** | Each `subscribe()` call registers its own callbacks; events are dispatched to all |
+| **Automatic Cleanup** | Shape is only unsubscribed when the last component unsubscribes |
+| **getInflightPromises()** | Prevents race conditions by tracking pending operations across component lifecycle |
+
+---
+
+## useTableSync Composable API
+
+The `useTableSync` composable provides a simplified, reactive API for syncing table data from Electric SQL. It abstracts the lower-level `useElectricSync` and provides automatic sync management with Vue reactivity.
+
+### 1. useTableSync - Generic Table Sync Composable
+
+A generic composable that handles syncing any table with automatic lifecycle management.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `table` | `string` | ✅ | The table name to sync |
+| `callbacks` | `TableSyncCallbacks` | ❌ | Optional callbacks for data changes |
+| `autoRefresh` | `boolean` | ❌ | Auto refresh on mount (default: `true`) |
+
+```typescript
+interface TableSyncCallbacks<T = any> {
+  onInsert?: (row: T) => void;
+  onUpdate?: (row: T) => void;
+  onDelete?: (row: T) => void;
+  onChange?: (rows: T[]) => void;
+}
+
+interface UseTableSyncOptions<T = any> {
+  table: string;
+  callbacks?: TableSyncCallbacks<T>;
+  autoRefresh?: boolean;  // default: true
+}
+```
+
+#### Returns
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `rows` | `Ref<T[]>` | Reactive array of synced rows |
+| `isSyncing` | `Ref<boolean>` | Whether initial sync is in progress |
+| `isUpToDate` | `Ref<boolean>` | Whether data is up to date with server |
+| `error` | `Ref<Error \| null>` | Any sync error |
+| `refresh` | `() => Promise<void>` | Manually trigger a refresh |
+| `query` | `(filter?: FilterFn) => T[]` | Query synced data with optional filter |
+| `queryOne` | `(filter: FilterFn) => T \| undefined` | Query single row |
+| `liveQuery` | `(sql: string, params?: any[]) => LiveQuery` | Execute live SQL query |
+
+```typescript
+interface UseTableSyncReturn<T = any> {
+  rows: Ref<T[]>;
+  isSyncing: Ref<boolean>;
+  isUpToDate: Ref<boolean>;
+  error: Ref<Error | null>;
+  refresh: () => Promise<void>;
+  query: (filter?: (row: T) => boolean) => T[];
+  queryOne: (filter: (row: T) => boolean) => T | undefined;
+  liveQuery: (sql: string, params?: any[]) => LiveQuery<T>;
+}
+```
+
+#### Lifecycle
+
+- **Auto sync on mount**: Automatically starts syncing when component mounts
+- **Auto cleanup on unmount**: Automatically unsubscribes when component unmounts
+- **Shared subscription**: Multiple components using the same table share one underlying ShapeStream
+
+---
+
+### 2. Pre-configured Composables
+
+Built on top of `useTableSync`, these composables provide type-safe, domain-specific APIs:
+
+#### useCurrentUser()
+
+Syncs and provides the current user's profile data.
+
+```typescript
+// Returns current user with additional helpers
+const { 
+  user,           // Ref<User | null>
+  isSyncing,      // Ref<boolean>
+  isUpToDate,     // Ref<boolean>
+  error,          // Ref<Error | null>
+  refresh,        // () => Promise<void>
+  updateProfile   // (data: Partial<User>) => Promise<void>
+} = useCurrentUser(options?);
+
+// Options
+interface UseCurrentUserOptions {
+  onUpdate?: (user: User) => void;
+  onError?: (error: Error) => void;
+}
+```
+
+**Features:**
+- Automatically syncs `users` table filtered to current user
+- Provides `user` as a single object (not array)
+- Includes `updateProfile()` for optimistic updates
+
+#### useCompaniesSync()
+
+Syncs the companies list for the current user.
+
+```typescript
+const {
+  rows,           // Ref<Company[]>
+  companies,      // Alias for rows
+  isSyncing,
+  isUpToDate,
+  error,
+  refresh,
+  queryBySlug,    // (slug: string) => Company | undefined
+  getMyCompanies  // () => Company[] (filter by membership)
+} = useCompaniesSync(options?);
+
+interface UseCompaniesSyncOptions {
+  onChange?: (companies: Company[]) => void;
+  onInsert?: (company: Company) => void;
+}
+```
+
+#### useCompanyMembersSync()
+
+Syncs company members for accessible companies.
+
+```typescript
+const {
+  rows,               // Ref<CompanyMember[]>
+  members,            // Alias for rows
+  isSyncing,
+  isUpToDate,
+  error,
+  refresh,
+  getByCompany,       // (companyId: string) => CompanyMember[]
+  getByUser,          // (userId: string) => CompanyMember[]
+  getCompanyAdmins    // (companyId: string) => CompanyMember[]
+} = useCompanyMembersSync(options?);
+```
+
+---
+
+### 3. Usage Examples
+
+#### Before (Old Way with useUserSync)
+
+```typescript
+// app/components/UserProfile.vue
+<script setup>
+const userSync = useUserSync()
+const user = ref(null)
+const isLoading = ref(true)
+
+onMounted(async () => {
+  // Manual sync initiation
+  await userSync.sync({
+    callbacks: {
+      onInsert: (data) => { user.value = data },
+      onUpdate: (data) => { user.value = data },
+    }
+  })
+  isLoading.value = false
+})
+
+onUnmounted(() => {
+  // Manual cleanup required
+  userSync.unsubscribe()
+})
+</script>
+```
+
+#### After (New Way with useCurrentUser)
+
+```typescript
+// app/components/UserProfile.vue
+<script setup>
+// Single line - handles sync, reactivity, and cleanup automatically
+const { user, isSyncing, error } = useCurrentUser({
+  onUpdate: (updatedUser) => {
+    console.log('Profile updated:', updatedUser)
+  }
+})
+</script>
+
+<template>
+  <div v-if="isSyncing">Loading...</div>
+  <div v-else-if="error">Error: {{ error.message }}</div>
+  <div v-else>
+    <h1>{{ user?.name }}</h1>
+    <p>{{ user?.email }}</p>
+  </div>
+</template>
+```
+
+#### Using useTableSync Directly
+
+```typescript
+// Generic usage for any table
+const { 
+  rows: products,
+  isSyncing,
+  query,
+  queryOne 
+} = useTableSync({
+  table: 'products',
+  callbacks: {
+    onInsert: (product) => toast.success(`New product: ${product.name}`),
+    onDelete: (product) => toast.info(`Removed: ${product.name}`),
+  }
+})
+
+// Query helpers
+const activeProducts = computed(() => 
+  query(p => p.status === 'active')
+)
+
+const featuredProduct = computed(() => 
+  queryOne(p => p.featured === true)
+)
+```
+
+#### Using Pre-configured Composables
+
+```typescript
+// In a dashboard component
+const { companies, isUpToDate: companiesReady } = useCompaniesSync()
+const { members } = useCompanyMembersSync()
+
+// Reactive derived data
+const myCompanyIds = computed(() => 
+  members.value.filter(m => m.user_id === currentUserId).map(m => m.company_id)
+)
+
+const myCompanies = computed(() =>
+  companies.value.filter(c => myCompanyIds.value.includes(c.id))
+)
+
+// Wait for all data to be ready
+const allReady = computed(() => companiesReady.value)
+```
+
+---
+
+### 4. Migration Guide: useUserSync → useCurrentUser
+
+#### Step 1: Update Imports
+
+```typescript
+// Before
+import { useUserSync } from '~/composables/useUserSync'
+
+// After
+import { useCurrentUser } from '~/composables/useCurrentUser'
+```
+
+#### Step 2: Replace Component Usage
+
+```typescript
+// Before
+const userSync = useUserSync()
+const user = ref(null)
+const error = ref(null)
+
+onMounted(async () => {
+  try {
+    await userSync.sync({
+      callbacks: {
+        onInsert: (data) => user.value = data,
+        onUpdate: (data) => user.value = data,
+      }
+    })
+  } catch (e) {
+    error.value = e
+  }
+})
+
+onUnmounted(() => {
+  userSync.unsubscribe()
+})
+
+// After
+const { user, error, isSyncing } = useCurrentUser()
+// No onMounted/onUnmounted needed - automatic lifecycle management!
+```
+
+#### Step 3: Update Template References
+
+```vue
+<!-- Before -->
+<template>
+  <div v-if="!user">Loading...</div>
+  <div v-else>{{ user.name }}</div>
+</template>
+
+<!-- After -->
+<template>
+  <div v-if="isSyncing">Loading...</div>
+  <div v-else-if="error">Error: {{ error.message }}</div>
+  <div v-else>{{ user?.name }}</div>
+</template>
+```
+
+#### Step 4: Update Callbacks (Optional)
+
+```typescript
+// Before - callbacks in sync()
+await userSync.sync({
+  callbacks: {
+    onUpdate: (user) => analytics.track('Profile Viewed', user)
+  }
+})
+
+// After - callbacks in options
+const { user } = useCurrentUser({
+  onUpdate: (user) => analytics.track('Profile Viewed', user)
+})
+```
+
+#### Migration Checklist
+
+- [ ] Replace `useUserSync()` with `useCurrentUser()`
+- [ ] Remove manual `sync()` calls
+- [ ] Remove manual `unsubscribe()` calls
+- [ ] Remove `onMounted`/`onUnmounted` sync logic
+- [ ] Add `isSyncing` to template loading states
+- [ ] Update error handling to use returned `error` ref
+- [ ] Move callbacks from `sync()` to composable options
+
+---
+
+## Query-on-Demand Architecture
+
+This section documents the new data layering strategy that distinguishes between **global state** (persisted, always-available) and **query-on-demand** (fetched when needed, automatically cleaned up).
+
+### 1. Data Layering Design
+
+| Data Type | Pattern | Persistence | Lifecycle | Use Case |
+|-----------|---------|-------------|-----------|----------|
+| **Companies** | Global State | Long-term cache | Shared across pages | Company list, current company context |
+| **Members** | Query-on-Demand | Session-only | Page/component scope | Member management pages |
+| **Invites** | Query-on-Demand | Temporary (expiring) | Feature scope | Invite management, pending approvals |
+
+**Rationale:**
+- **Companies** are needed throughout the app (sidebar, navigation, context switching) and should always be available
+- **Members** are only needed on specific pages (team management, settings) and can be fetched on-demand
+- **Invites** are temporary data with natural expiration; keeping them in global state creates stale data issues
+
+### 2. New API Pattern
+
+The query-on-demand API provides reactive data fetching with automatic cleanup:
+
+#### Change Notification Registration
+
+```typescript
+// Register for member change notifications
+const unsubscribeMembers = onMembersChange((change) => {
+  console.log('Members changed:', change);
+  // Re-query members or update UI
+});
+
+// Register for invite change notifications
+const unsubscribeInvites = onInvitesChange((change) => {
+  console.log('Invites changed:', change);
+  // Re-query invites or update UI
+});
+
+// Cleanup when component unmounts
+onUnmounted(() => {
+  unsubscribeMembers();
+  unsubscribeInvites();
+});
+```
+
+#### On-Demand Queries
+
+```typescript
+// Query members for a specific company
+const members = await queryMembers(companyId);
+
+// Query all invites for a company
+const invites = await queryInvites(companyId);
+
+// Query invites filtered by status
+const pendingInvites = await queryInvites(companyId, 'pending');
+const expiredInvites = await queryInvites(companyId, 'expired');
+```
+
+#### Reactive Query Helper
+
+```typescript
+// useCompanyQueries - composable for reactive on-demand queries
+const {
+  members,        // Ref<CompanyMember[]>
+  invites,        // Ref<CompanyInvite[]>
+  isLoading,      // Ref<boolean>
+  isError,        // Ref<boolean>
+  error,          // Ref<Error | null>
+  refreshMembers, // () => Promise<void>
+  refreshInvites, // () => Promise<void>
+} = useCompanyQueries(companyId, {
+  // Options
+  fetchMembers: true,    // Auto-fetch members
+  fetchInvites: true,    // Auto-fetch invites
+  inviteStatus: 'pending', // Filter invites by status
+});
+```
+
+### 3. Migration from Old Pattern
+
+#### Before (Global State)
+
+```typescript
+// ❌ Old pattern - all data in global state
+const { members, invites } = useCompanies();
+
+// Problems:
+// - Members loaded even when not needed
+// - Invites never expire, become stale
+// - Memory pressure from unused data
+// - Manual sync management required
+```
+
+#### After (Query-on-Demand)
+
+```typescript
+// ✅ New pattern - fetch only when needed
+// In a team management page/component:
+const companyId = useRoute().params.companyId;
+
+// Option 1: Use the reactive composable
+const { members, invites, refreshMembers } = useCompanyQueries(companyId, {
+  fetchMembers: true,
+  fetchInvites: true,
+});
+
+// Option 2: Manual query with change notifications
+onMounted(async () => {
+  // Initial fetch
+  const members = await queryMembers(companyId);
+  
+  // Listen for changes
+  const unsub = onMembersChange((change) => {
+    if (change.companyId === companyId) {
+      // Refresh data when changes occur
+      queryMembers(companyId).then(updateUI);
     }
   });
   
-  return { syncStatus };
+  onUnmounted(unsub);
+});
+```
+
+### 4. Usage Examples
+
+#### Example 1: Team Management Page
+
+```vue
+<script setup>
+const route = useRoute();
+const companyId = route.params.companyId;
+
+// Reactive query - auto-fetches on mount, cleans up on unmount
+const { 
+  members, 
+  isLoading, 
+  error,
+  refreshMembers 
+} = useCompanyQueries(companyId, { 
+  fetchMembers: true 
+});
+
+// Handle member removal
+async function removeMember(memberId) {
+  await $fetch(`/api/companies/${companyId}/members/${memberId}`, {
+    method: 'DELETE'
+  });
+  // Change notification will trigger auto-refresh
+}
+</script>
+
+<template>
+  <div>
+    <h1>Team Members</h1>
+    
+    <div v-if="isLoading">Loading members...</div>
+    <div v-else-if="error">Error: {{ error.message }}</div>
+    <ul v-else>
+      <li v-for="member in members" :key="member.id">
+        {{ member.name }} ({{ member.role }})
+        <button @click="removeMember(member.id)">Remove</button>
+      </li>
+    </ul>
+  </div>
+</template>
+```
+
+#### Example 2: Invite Management with Status Filter
+
+```vue
+<script setup>
+const companyId = useRoute().params.companyId;
+const filter = ref('pending'); // 'pending' | 'accepted' | 'expired'
+
+// Watch filter changes and re-query
+const { invites, refreshInvites } = useCompanyQueries(companyId, {
+  fetchInvites: true,
+  inviteStatus: filter, // Reactive filter
+});
+
+// Or manual approach for more control
+const invites = ref([]);
+
+async function loadInvites() {
+  invites.value = await queryInvites(companyId, filter.value);
+}
+
+// Auto-refresh when invites change
+onInvitesChange((change) => {
+  if (change.companyId === companyId) {
+    loadInvites();
+  }
+});
+
+onMounted(loadInvites);
+</script>
+```
+
+#### Example 3: Combined Usage (Members + Invites)
+
+```vue
+<script setup>
+const companyId = useRoute().params.companyId;
+
+// Fetch both members and invites
+const { 
+  members, 
+  invites,
+  isLoading,
+  refreshMembers,
+  refreshInvites 
+} = useCompanyQueries(companyId, {
+  fetchMembers: true,
+  fetchInvites: true,
+});
+
+// Combined computed for total team size
+const totalTeamSize = computed(() => 
+  members.value.length + invites.value.filter(i => i.status === 'pending').length
+);
+
+// Manually refresh both
+async function handleInviteSent() {
+  await refreshInvites();
+  await refreshMembers(); // In case invite was auto-accepted
+}
+</script>
+```
+
+### 5. Benefits of New Design
+
+| Benefit | Description |
+|---------|-------------|
+| **Reduced Global State** | Only companies and core entities persist globally; transient data is fetched on-demand |
+| **Automatic Cleanup** | Query-on-demand data is automatically released when components unmount or pages navigate away |
+| **Still Real-Time Sync** | Change notifications ensure UI stays synchronized without polling |
+| **More Flexible Data Fetching** | Status filters, pagination, and conditional fetching are easier to implement |
+| **Better Memory Management** | No accumulation of stale invite data; members unloaded when not needed |
+| **Faster Initial Load** | Global state only includes essential data; secondary data loads on demand |
+| **Cleaner Architecture** | Clear separation between "always needed" and "contextually needed" data |
+
+### 6. API Reference
+
+#### `onMembersChange(callback)`
+
+Registers a callback for member data changes.
+
+```typescript
+function onMembersChange(
+  callback: (change: MemberChangeEvent) => void
+): () => void;
+
+interface MemberChangeEvent {
+  type: 'insert' | 'update' | 'delete';
+  companyId: string;
+  memberId: string;
+  data?: CompanyMember;
 }
 ```
+
+**Returns:** Unsubscribe function
+
+---
+
+#### `onInvitesChange(callback)`
+
+Registers a callback for invite data changes.
+
+```typescript
+function onInvitesChange(
+  callback: (change: InviteChangeEvent) => void
+): () => void;
+
+interface InviteChangeEvent {
+  type: 'insert' | 'update' | 'delete';
+  companyId: string;
+  inviteId: string;
+  data?: CompanyInvite;
+}
+```
+
+**Returns:** Unsubscribe function
+
+---
+
+#### `queryMembers(companyId)`
+
+Fetches members for a specific company on-demand.
+
+```typescript
+function queryMembers(companyId: string): Promise<CompanyMember[]>;
+
+interface CompanyMember {
+  id: string;
+  company_id: string;
+  user_id: string;
+  role: 'owner' | 'admin' | 'member';
+  name: string;
+  email: string;
+  avatar_url?: string;
+  joined_at: string;
+}
+```
+
+---
+
+#### `queryInvites(companyId, status?)`
+
+Fetches invites for a company, optionally filtered by status.
+
+```typescript
+function queryInvites(
+  companyId: string, 
+  status?: 'pending' | 'accepted' | 'expired'
+): Promise<CompanyInvite[]>;
+
+interface CompanyInvite {
+  id: string;
+  company_id: string;
+  email: string;
+  role: 'admin' | 'member';
+  status: 'pending' | 'accepted' | 'expired';
+  invited_by: string;
+  invited_at: string;
+  expires_at: string;
+  accepted_at?: string;
+}
+```
+
+---
+
+#### `useCompanyQueries(companyId, options)`
+
+Composable for reactive on-demand queries.
+
+```typescript
+function useCompanyQueries(
+  companyId: string | Ref<string>,
+  options?: CompanyQueriesOptions
+): CompanyQueriesReturn;
+
+interface CompanyQueriesOptions {
+  fetchMembers?: boolean;        // Auto-fetch members on mount
+  fetchInvites?: boolean;        // Auto-fetch invites on mount
+  inviteStatus?: string | Ref<string>; // Filter invites by status
+}
+
+interface CompanyQueriesReturn {
+  // Data
+  members: Ref<CompanyMember[]>;
+  invites: Ref<CompanyInvite[]>;
+  
+  // State
+  isLoading: Ref<boolean>;
+  isError: Ref<boolean>;
+  error: Ref<Error | null>;
+  
+  // Actions
+  refreshMembers: () => Promise<void>;
+  refreshInvites: () => Promise<void>;
+  refreshAll: () => Promise<void>;
+}
+```
+
+### 7. Migration Checklist
+
+When migrating from the old global state pattern to query-on-demand:
+
+- [ ] Identify pages/components that use `members` from global state
+- [ ] Identify pages/components that use `invites` from global state
+- [ ] Replace `const { members } = useCompanies()` with `useCompanyQueries()`
+- [ ] Remove manual `sync()` calls for members/invites
+- [ ] Add `onMembersChange` listeners where real-time updates are needed
+- [ ] Add `onInvitesChange` listeners where real-time updates are needed
+- [ ] Ensure proper cleanup in `onUnmounted` for change listeners
+- [ ] Update templates to handle `isLoading` states
+- [ ] Test navigation between member-heavy and member-free pages
+- [ ] Verify memory usage doesn't grow unbounded with invite data
+

@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
+import type {
+    SyncedCompanyMember,
+    SyncedInviteLink,
+} from "~/composables/useCompanies";
 
 definePageMeta({
     middleware: ["auth"],
@@ -8,25 +12,69 @@ definePageMeta({
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const userSession = useUserSession();
 
 const companyId = route.params.id as string;
 
-// Fetch company
-const { data: companyData } = await useFetch(`/api/companies/${companyId}`);
-const company = computed(() => companyData.value?.company);
+// Use synced company data
+const {
+    currentCompany,
+    allCompanies,
+    switchCompany,
+    isLoading: syncLoading,
+    onMembersChange,
+    onInviteLinksChange,
+} = useCompanies();
+const { role, isOwner, isAdmin, canManage } = useCurrentCompanyRole();
+const { user: currentUser } = useCurrentUser();
 
-// Navigation items for secondary nav
-const navItems = computed(() => [
-    { label: "General", to: `/companies/${companyId}` },
-    { label: "Members", to: `/companies/${companyId}/members` },
-]);
+// Local state for members and invites (queried on-demand)
+const members = ref<SyncedCompanyMember[]>([]);
+const invites = ref<SyncedInviteLinkLink[]>([]);
+const isLoadingMembers = ref(false);
+const isLoadingInvites = ref(false);
+const companyComposabls = useCompanies();
+// Switch to this company if not already current
+onMounted(() => {
+    if (currentCompany.value?.id !== companyId) {
+        switchCompany(companyId);
+    }
+    loadMembers();
+    loadInvites();
 
-// Redirect if not found
+    // Register change callbacks
+    const unsubMembers = onMembersChange(() => loadMembers());
+    const unsubInvites = onInviteLinksChange(() => loadInvites());
+
+    onUnmounted(() => {
+        unsubMembers();
+        unsubInvites();
+    });
+});
+
+async function loadMembers() {
+    isLoadingMembers.value = true;
+    members.value = await useCompanies().queryMembers(companyId);
+    isLoadingMembers.value = false;
+}
+
+async function loadInvites() {
+    isLoadingInvites.value = true;
+    invites.value = await useCompanies().queryInviteLinks(companyId, true);
+    isLoadingInvites.value = false;
+}
+
+const invitesPending = computed(() => isLoadingInvites.value);
+
+// Get company from synced data
+const company = computed(
+    () => allCompanies.value.find((c) => c.id === companyId) || null,
+);
+
+// Watch for company not found
 watch(
     () => company.value,
     (val) => {
-        if (!val) {
+        if (!syncLoading.value && allCompanies.value.length > 0 && !val) {
             toast.add({
                 title: "Company not found",
                 description: "The company you are looking for does not exist",
@@ -37,28 +85,11 @@ watch(
     },
 );
 
-// Fetch members
-const {
-    data: membersData,
-    pending: membersPending,
-    refresh: refreshMembers,
-} = await useFetch(`/api/companies/${companyId}/members`);
-const members = computed(() => membersData.value?.members || []);
-
-// Fetch invites
-const {
-    data: invitesData,
-    pending: invitesPending,
-    refresh: refreshInvites,
-} = await useFetch(`/api/companies/${companyId}/invites`);
-const invites = computed(() => invitesData.value?.invites || []);
-
-const canManage = computed(() => {
-    if (!company.value) return false;
-    return company.value.myRole === "owner" || company.value.myRole === "admin";
-});
-
-const isOwner = computed(() => company.value?.myRole === "owner");
+// Navigation items for secondary nav
+const navItems = computed(() => [
+    { label: "General", to: `/companies/${companyId}` },
+    { label: "Members", to: `/companies/${companyId}/members` },
+]);
 
 // Member table columns
 const columns: TableColumn<any>[] = [
@@ -115,15 +146,15 @@ const columns: TableColumn<any>[] = [
         header: "",
         cell: ({ row }) => {
             const member = row.original;
-            const isSelf = member.userId === userSession.user.value?.id;
+            const isSelf = member.userId === currentUser.value?.id;
 
             // Don't show actions for owner
             if (member.role === "owner") return null;
 
-            const canEdit =
+            const canEditMember =
                 isOwner.value || (canManage.value && member.role !== "admin");
 
-            if (!canEdit && !isSelf) return null;
+            if (!canEditMember && !isSelf) return null;
 
             return h("div", { class: "flex items-center justify-end gap-2" }, [
                 isOwner.value &&
@@ -233,7 +264,7 @@ async function addMember() {
         addMemberForm.email = "";
         addMemberForm.role = "member";
         addMemberModalOpen.value = false;
-        await refreshMembers();
+        await loadMembers();
     } catch (error: any) {
         toast.add({
             title: "Error",
@@ -259,7 +290,7 @@ async function updateRole(userId: string, newRole: "admin" | "member") {
             color: "success",
         });
 
-        await refreshMembers();
+        await loadMembers();
     } catch (error: any) {
         toast.add({
             title: "Error",
@@ -305,7 +336,7 @@ async function confirmRemove() {
         if (memberToRemove.value.isSelf) {
             router.push("/companies");
         } else {
-            await refreshMembers();
+            await loadMembers();
         }
     } catch (error: any) {
         toast.add({
@@ -351,7 +382,7 @@ async function createInvite() {
         });
 
         createdInvite.value = response.invite;
-        await refreshInvites();
+        await loadInvites();
 
         toast.add({
             title: "Invite created",
@@ -381,7 +412,7 @@ async function cancelInvite(token: string) {
             color: "success",
         });
 
-        await refreshInvites();
+        await loadInvites();
     } catch (error: any) {
         toast.add({
             title: "Error",
@@ -441,27 +472,6 @@ function closeInviteModal() {
                 </template>
             </UDashboardNavbar>
 
-            <UDashboardToolbar>
-                <template #left>
-                    <div class="flex items-center gap-2">
-                        <UBadge
-                            v-if="company?.myRole"
-                            variant="soft"
-                            :color="
-                                company.myRole === 'owner'
-                                    ? 'warning'
-                                    : 'primary'
-                            "
-                        >
-                            {{ company.myRole }}
-                        </UBadge>
-                        <span class="text-sm text-dimmed"
-                            >@{{ company?.slug }}</span
-                        >
-                    </div>
-                </template>
-            </UDashboardToolbar>
-
             <!-- Secondary Navigation -->
             <UDashboardToolbar class="border-b border-default">
                 <template #left>
@@ -496,22 +506,16 @@ function closeInviteModal() {
                                 color="neutral"
                                 variant="ghost"
                                 icon="i-lucide-refresh-cw"
-                                :loading="membersPending"
-                                @click="refreshMembers()"
+                                @click="loadMembers()"
                             />
                         </div>
                     </template>
 
-                    <UTable
-                        :data="members"
-                        :columns="columns"
-                        :loading="membersPending"
-                        class="w-full"
-                    />
+                    <UTable :data="members" :columns="columns" class="w-full" />
                 </UCard>
 
                 <!-- Invites Section (Owner Only) -->
-                <UCard v-if="isOwner">
+                <UCard v-if="isOwner || isAdmin">
                     <template #header>
                         <div class="flex items-center justify-between">
                             <div>
@@ -531,7 +535,7 @@ function closeInviteModal() {
                                     variant="ghost"
                                     icon="i-lucide-refresh-cw"
                                     :loading="invitesPending"
-                                    @click="refreshInvites()"
+                                    @click="loadInvites()"
                                 />
                                 <UButton
                                     color="primary"
@@ -581,27 +585,24 @@ function closeInviteModal() {
                                             {{ invite.role }}
                                         </UBadge>
                                         <span
-                                            v-if="invite.maxUses"
+                                            v-if="invite.email"
                                             class="text-xs text-dimmed"
                                         >
-                                            {{ invite.usedCount }}/{{
-                                                invite.maxUses
-                                            }}
-                                            uses
+                                            {{ invite.email }}
                                         </span>
                                     </div>
                                     <p class="text-xs text-dimmed mt-1">
                                         Created
                                         {{
                                             new Date(
-                                                invite.createdAt,
+                                                invite.created_at,
                                             ).toLocaleDateString()
                                         }}
-                                        <span v-if="invite.expiresAt">
+                                        <span v-if="invite.expires_at">
                                             · Expires
                                             {{
                                                 new Date(
-                                                    invite.expiresAt,
+                                                    invite.expires_at,
                                                 ).toLocaleDateString()
                                             }}
                                         </span>
@@ -615,7 +616,7 @@ function closeInviteModal() {
                                     variant="ghost"
                                     size="sm"
                                     icon="i-lucide-copy"
-                                    @click="copyInviteLink(invite.inviteUrl)"
+                                    @click="copyInviteLink(invite.token)"
                                 />
                                 <UButton
                                     color="error"

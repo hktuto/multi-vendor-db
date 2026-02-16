@@ -28,8 +28,23 @@ interface Company {
   myRole: 'owner' | 'admin' | 'member'
 }
 
-const { data, pending, refresh } = await useFetch('/api/companies')
-const companies = computed(() => data.value?.companies || [])
+// Use synced company data instead of API fetch
+const { allCompanies: companies, isLoading: pending } = useCompanies()
+const { user } = useCurrentUser()
+
+// Calculate member count for each company
+const companiesWithCount = computed(() => {
+  return companies.value.map(company => ({
+    ...company,
+    memberCount: 0, // TODO: Get from synced members
+    myRole: 'member' as const, // TODO: Get from synced membership
+    owner: {
+      id: '',
+      name: 'Unknown',
+      email: '',
+    }
+  }))
+})
 
 const toast = useToast()
 const router = useRouter()
@@ -150,7 +165,7 @@ async function confirmDelete() {
       color: 'success'
     })
     
-    await refresh()
+    // Data will sync automatically via Electric
   } catch (error: any) {
     toast.add({
       title: 'Error',
@@ -213,7 +228,7 @@ function cancelDelete() {
                 variant="ghost" 
                 icon="i-lucide-refresh-cw"
                 :loading="pending"
-                @click="refresh()"
+                disabled
               />
             </div>
           </template>

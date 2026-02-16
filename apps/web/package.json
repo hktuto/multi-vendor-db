@@ -3,8 +3,7 @@
   "type": "module",
   "scripts": {
     "build": "nuxt build",
-    "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 nuxt dev --https --https.cert ../../.certs/cert.pem --https.key ../../.certs/key.pem",
-    "dev:https": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 nuxt dev --https --https.cert ../../.certs/cert.pem --https.key ../../.certs/key.pem",
+    "dev": "nuxt dev --https --https.cert ../../.certs/cert.pem --https.key ../../.certs/key.pem",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",

@@ -50,6 +50,7 @@ export const companies = pgTable('companies', {
   name: varchar('name', { length: 255 }).notNull(),
   slug: varchar('slug', { length: 255 }).notNull().unique(),
   ownerId: uuid('owner_id').notNull().references(() => users.id),
+  plan: varchar('plan', { length: 24 }).notNull().$type<'basic' | 'pro' | 'enterprise'>().default('basic'),
   settings: jsonb('settings').default({
     timezone: 'UTC',
     dateFormat: 'YYYY-MM-DD',
@@ -98,16 +99,18 @@ export const inviteLinks = pgTable('invite_links', {
   id: uuid('id').primaryKey(), // Application-generated UUID
   companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
   createdBy: uuid('created_by').notNull().references(() => users.id),
+  email: varchar('email', { length: 255 }), // NEW: One invite per email per company
   token: varchar('token', { length: 255 }).notNull().unique(),
   role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'member'>(),
-  maxUses: integer('max_uses'),
-  usedCount: integer('used_count').default(0).notNull(),
+  // REMOVED: maxUses, usedCount - one invite per person model
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
   usedBy: uuid('used_by').references(() => users.id),
   isActive: boolean('is_active').default(true).notNull(),
-})
+}, (table) => [
+  // unique('unique_company_invite_email').on(table.companyId, table.email), // Optional: enforce one invite per email
+])
 
 // ============================================
 // WORKSPACE & FOLDERS

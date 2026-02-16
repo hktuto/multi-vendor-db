@@ -3,7 +3,8 @@ definePageMeta({
   middleware: ['auth']
 })
 
-const { user } = useUserSession()
+// Use reactive synced user data - auto syncs on mount
+const { user, isSyncing } = useCurrentUser()
 </script>
 
 <template>
