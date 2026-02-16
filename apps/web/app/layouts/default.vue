@@ -26,6 +26,14 @@ const links = [
             },
         },
         {
+            label: "Spaces",
+            icon: "i-lucide-rocket",
+            to: "/spaces",
+            onSelect: () => {
+                open.value = false;
+            },
+        },
+        {
             label: "Electric SQL",
             icon: "i-lucide-zap",
             to: "/electric-test",
