@@ -243,7 +243,10 @@ const _useCompanies = () => {
       return { role: null, isOwner: false, isAdmin: false, canManage: false };
     }
 
-    const role = result.rows[0].role;
+    const role = result.rows[0]?.role;
+    if (!role) {
+      return { role: null, isOwner: false, isAdmin: false, canManage: false };
+    }
     const isOwner = role === "owner";
     const isAdmin = role === "admin" || role === "owner";
     const canManage = isAdmin;
@@ -270,7 +273,7 @@ const _useCompanies = () => {
 
       // Set first company as current if none selected
       if (!currentCompanyId.value && allCompanies.value.length > 0) {
-        currentCompanyId.value = allCompanies.value[0].id;
+        currentCompanyId.value = allCompanies.value[0]?.id ?? null;
       }
 
       // Subscribe to companies table (global state)

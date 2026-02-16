@@ -2,7 +2,7 @@
 import type { TableColumn } from "@nuxt/ui";
 import type {
     SyncedCompanyMember,
-    SyncedInviteLinkLink,
+    SyncedInviteLink,
 } from "~/composables/useCompanies";
 
 definePageMeta({
