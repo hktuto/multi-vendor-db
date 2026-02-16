@@ -55,3 +55,5 @@ apps/web/.data
 # SSL Certificates (self-signed, local only)
 .certs/*.pem
 !.certs/README.md
+docs/.obsidian/workspace.json
+docs/.obsidian/workspace.json
