@@ -193,7 +193,7 @@ async function getOrCreateSharedShape(
     shapeUrl,
     primaryKey,
   );
-  inflightShapePromises.set(shapeKey, creationPromise);
+  getInflightPromises().set(shapeKey, creationPromise);
 
   try {
     const sharedShape = await creationPromise;
