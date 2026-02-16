@@ -251,17 +251,30 @@ services:
 | Concern | Mitigation |
 |---------|------------|
 | Electric HTTP API exposed | Use API key + proxy through Nuxt API |
-| Sync data visibility | Implement auth on sync shapes (where clauses) |
+| Sync data visibility | Server-side proxy auth determines what data each user can sync |
 | Local data tampering | Treat PGlite as cache, validate on server write |
 
 **Auth Strategy:**
 ```typescript
-// shapes should filter by user's accessible data
-params: {
+// Client only specifies which table to sync
+// Server-side proxy auth determines what data the user can access
+const shape = await pg.electric.syncShapeToTable({
+  shape: {
+    url: `${electricUrl}/v1/shape`,
+    params: {
+      table: 'companies'
+      // No 'where' clause - filtering happens server-side based on auth token
+    }
+  },
   table: 'companies',
-  where: `id IN (SELECT company_id FROM company_members WHERE user_id = '${userId}')`
-}
+  primaryKey: ['id']
+});
 ```
+
+The proxy server validates the user's auth token and applies appropriate filters:
+- User only receives companies they are members of
+- Company members only see data for their assigned companies
+- Row-level security enforced at the proxy layer
 
 ### 4.4 Storage Limits
 
@@ -445,22 +458,22 @@ export function useElectricSync() {
   /**
    * Subscribe to sync events for a table
    *
-   * Multiple components can subscribe to the same shape simultaneously.
-   * The underlying ShapeStream and syncShapeToTable are shared,
+   * Multiple components can subscribe to the same table simultaneously.
+   * The underlying ShapeStream and syncShapeToTable are shared per table,
    * but each component gets its own callbacks.
    *
-   * @param config - Shape configuration (table, callbacks, shapeKey, etc.)
+   * @param config - Shape configuration (table, callbacks, etc.)
    * @returns Unsubscribe function for this specific subscription
    */
   async function subscribe<T extends Record<string, any>>(
     config: ShapeConfig
   ): Promise<() => void> {
-    const { table, shapeKey = table, callbacks = {} } = config;
+    const { table, callbacks = {} } = config;
     
-    // Get or create shared shape instance
-    // If another component already subscribed to this shapeKey,
+    // Get or create shared shape instance for this table
+    // If another component already subscribed to this table,
     // it will reuse the existing ShapeStream + syncShapeToTable
-    const sharedShape = await getOrCreateSharedShape(table, shapeKey, url, pkArray);
+    const sharedShape = await getOrCreateSharedShape(table, url, pkArray);
     
     // Register this component's callbacks
     const callbackId = generateCallbackId();
@@ -472,8 +485,17 @@ export function useElectricSync() {
     // Return unsubscribe function - only cleans up this component's callback
     return () => {
       sharedShape.callbacks.delete(callbackId);
-      maybeCleanupShape(shapeKey); // Only cleanup if no more subscribers
+      maybeCleanupShape(table); // Only cleanup if no more subscribers
     };
+  }
+
+  /**
+   * Get all in-flight promises for pending sync operations.
+   * Useful for preventing race conditions during navigation or HMR.
+   * Stored on window object to survive HMR.
+   */
+  function getInflightPromises(): Promise<void>[] {
+    return window.__electricInflightPromises || [];
   }
   
   return {
@@ -482,11 +504,12 @@ export function useElectricSync() {
     unsubscribe,
     unsubscribeAll,
     hasSubscription,
-    getSubscriberCount,  // NEW: see how many components are using a shape
+    getSubscriberCount,  // see how many components are using a table
     getSubscribedShapes,
     getSubscribedTables,
     isTableSubscribed,
-    isShapeUpToDate,     // NEW: check if initial sync is complete
+    isShapeUpToDate,     // check if initial sync is complete
+    getInflightPromises, // NEW: get pending sync promises
     // Reactive state
     isSyncing: readonly(globalIsSyncing),
     error: readonly(globalError),
@@ -501,24 +524,22 @@ export function useElectricSync() {
 const electric = useElectricSync();
 const unsubA = await electric.subscribe({
   table: 'users',
-  shapeKey: 'users-sync',
   callbacks: {
     onInsert: (user) => console.log('A: New user', user),
     onUpdate: (user) => console.log('A: Updated', user),
   }
 });
 
-// Component B - User Avatar (same page, same shape)
+// Component B - User Avatar (same page, same table)
 const unsubB = await electric.subscribe({
-  table: 'users', 
-  shapeKey: 'users-sync',  // Same shapeKey - shares underlying connection
+  table: 'users',  // Same table - shares underlying connection
   callbacks: {
     onUpdate: (user) => console.log('B: Avatar updated', user.avatar_url),
   }
 });
 
 // Both A and B receive events from the same ShapeStream
-// Only ONE syncShapeToTable + ONE ShapeStream exists for 'users-sync'
+// Only ONE syncShapeToTable + ONE ShapeStream exists for 'users' table
 
 // Component A unmounts
 unsubA();  // B still receives events
@@ -531,8 +552,11 @@ unsubB();  // Now shape is fully cleaned up (no more subscribers)
 
 | Decision | Rationale |
 |----------|-----------|
-| **Always Hybrid Mode** | syncShapeToTable (data persistence) + ShapeStream (real-time events) are both enabled by default - no `hybridMode` option |
-| **Shared Shape Instances** | One ShapeStream per shapeKey, shared across all components subscribing to the same key |
+| **Always Hybrid Mode** | syncShapeToTable (data persistence) + ShapeStream (real-time events) are both enabled - always on, no option to disable |
+| **Table as Unique Identifier** | One ShapeStream per table, shared across all components subscribing to that table |
+| **No `shapeKey` Parameter** | Table name is the unique identifier; prevents syncShapeToTable conflicts |
+| **No Client `where` Clause** | Server-side proxy auth determines what data to sync; client only specifies table |
+| **Window Object Storage** | `window.__electricSharedShapes` and `window.__electricInflightPromises` survive HMR |
 | **Per-Component Callbacks** | Each `subscribe()` call registers its own callbacks; events are dispatched to all |
 | **Automatic Cleanup** | Shape is only unsubscribed when the last component unsubscribes |
-| **No `where` clause** | Server-side proxy auth will determine what data to sync |
+| **getInflightPromises()** | Prevents race conditions by tracking pending operations across component lifecycle |

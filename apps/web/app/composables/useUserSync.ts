@@ -1,10 +1,10 @@
 import { createSharedComposable } from "@vueuse/core";
 import { useElectricSync } from "./useElectricSync";
 import { usePgWorker } from "./usePgWorker";
-import type { SyncEventCallbacks, ShapeConfig } from "./useElectricSync";
+import type { SyncEventCallbacks } from "./useElectricSync";
 
 /**
- * User table schema
+ * User table schema (from Electric SQL sync)
  */
 export interface SyncedUser {
   id: string;
@@ -24,27 +24,28 @@ export interface UseUserSyncOptions {
   autoRefresh?: boolean;
   /** Electric URL (defaults to runtime config) */
   electricUrl?: string;
-  /** Shape key for subscription identification */
-  shapeKey?: string;
 }
 
 /**
- * User sync composable - manages user data sync using syncShapeToTable pattern
+ * User sync composable - READ-ONLY local data access
  *
- * This composable:
- * - Uses useElectricSync with syncShapeToTable for automatic sync
- * - Uses usePgWorker for data queries
- * - Loads existing data from DB first, then starts sync for updates
- * - Optional auto-refresh on sync events
- * - Provides reactive `data` array for UI bindings
+ * This composable provides:
+ * - Real-time sync from server to local PGlite via Electric SQL
+ * - Reactive data array for UI bindings
+ * - Query helpers for reading local user data
  *
- * Uses createSharedComposable for singleton pattern
+ * IMPORTANT: This composable is READ-ONLY. All mutations (create/update/delete)
+ * must go through API endpoints. The local PGlite database is a cache/mirror
+ * that syncs from the server, not a source of truth.
+ *
+ * Data flow:
+ *   Write: Component → API → PostgreSQL → Electric → PGlite (local)
+ *   Read:  Component ← PGlite (local) ← Electric ← PostgreSQL
+ *
+ * Uses createSharedComposable for singleton pattern across the app.
  */
 const _useUserSync = (options: UseUserSyncOptions = {}) => {
-  const {
-    autoRefresh = false,
-    shapeKey = "users_sync",
-  } = options;
+  const { autoRefresh = false } = options;
 
   const electric = useElectricSync();
   const pg = usePgWorker();
@@ -53,12 +54,13 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
   const isSyncing = useState("user-sync-active", () => false);
   const isUpToDate = useState("user-sync-uptodate", () => false);
   const syncError = useState<Error | null>("user-sync-error", () => null);
-  
+
   // Reactive data array - automatically updates when refresh() is called
   const data = useState<SyncedUser[]>("user-sync-data", () => []);
 
   const config = useRuntimeConfig();
-  const ELECTRIC_URL = options.electricUrl || config.public.electricUrl || "http://localhost:3000";
+  const ELECTRIC_URL =
+    options.electricUrl || config.public.electricUrl || "http://localhost:3000";
 
   /**
    * Load all users from local database
@@ -84,44 +86,20 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
   }
 
   /**
-   * Ensure users table exists in PGlite
+   * Start syncing user data from server to local DB
    *
-   * Note: syncShapeToTable handles table creation automatically,
-   * but we keep this for backwards compatibility and manual operations
-   */
-  async function ensureTable(): Promise<void> {
-    const worker = await pg.init();
-    await worker.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL UNIQUE,
-        name TEXT,
-        avatar_url TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-  }
-
-  /**
-   * Start syncing user data
+   * This subscribes to the 'users' table via Electric SQL.
+   * Multiple components can call sync() - they will share the same subscription.
    *
-   * Uses useElectricSync for real-time sync:
-   * 1. Load existing data from DB first (for immediate UI display)
-   * 2. Then subscribe to Electric for real-time updates
+   * Note: This is read-only sync. Data flows from server to local only.
+   * To create/update/delete users, use the API endpoints instead.
    *
-   * Multiple components can call sync() with the same shapeKey - 
-   * they will share the underlying ShapeStream subscription.
-   *
-   * @param callbacks - Optional event callbacks
+   * @param callbacks - Optional event callbacks for sync events
    * @returns Unsubscribe function
    */
   async function sync(
     callbacks: SyncEventCallbacks<SyncedUser> = {}
   ): Promise<() => void> {
-    // Ensure table exists (for manual operations compatibility)
-    await ensureTable();
-
     // Reset local state
     isSyncing.value = true;
     isUpToDate.value = false;
@@ -131,19 +109,21 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
     // This ensures UI has data immediately, even before sync completes
     try {
       await loadUsers();
-      console.log("[useUserSync] Initial data loaded from DB:", data.value.length, "users");
+      console.log(
+        "[useUserSync] Initial data loaded from DB:",
+        data.value.length,
+        "users"
+      );
     } catch (error) {
       console.warn("[useUserSync] Failed to load initial data:", error);
       // Continue with sync even if initial load fails
     }
 
     // STEP 2: Start sync for real-time updates
-    // This subscribes to the shared shape - if another component already
-    // subscribed to 'users_sync', this will reuse the existing subscription
+    // Multiple components calling sync() will share the same underlying subscription
     const unsubscribe = await electric.subscribe<SyncedUser>({
       table: "users",
       shapeUrl: `${ELECTRIC_URL}/v1/shape`,
-      shapeKey,
       callbacks: {
         onInsert: async (user) => {
           if (autoRefresh) await refresh();
@@ -183,26 +163,26 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
   }
 
   /**
-   * Query helpers - pages use these to query data themselves
+   * Query helpers - READ ONLY
+   * These query the local synced data, not the server.
    */
 
   /**
-   * Get current user by ID
+   * Get user by ID from local DB
    */
-  async function getCurrentUser(userId: string): Promise<SyncedUser | null> {
+  async function getById(userId: string): Promise<SyncedUser | null> {
     const worker = await pg.init();
     const result = await worker.query<SyncedUser>(
       "SELECT * FROM users WHERE id = $1",
       [userId]
     );
-    console.log("getCurrentUser", result, userId);
     return result.rows[0] || null;
   }
 
   /**
-   * Get user by email
+   * Get user by email from local DB
    */
-  async function getUserByEmail(email: string): Promise<SyncedUser | null> {
+  async function getByEmail(email: string): Promise<SyncedUser | null> {
     const worker = await pg.init();
     const result = await worker.query<SyncedUser>(
       "SELECT * FROM users WHERE email = $1",
@@ -212,17 +192,16 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
   }
 
   /**
-   * Get all users
-   * @deprecated Use reactive `data` or `refresh()` instead
+   * Get all users from local DB
    */
-  async function getAllUsers(): Promise<SyncedUser[]> {
+  async function getAll(): Promise<SyncedUser[]> {
     return await loadUsers();
   }
 
   /**
-   * Search users by name or email
+   * Search users by name or email from local DB
    */
-  async function searchUsers(query: string): Promise<SyncedUser[]> {
+  async function search(query: string): Promise<SyncedUser[]> {
     const worker = await pg.init();
     const result = await worker.query<SyncedUser>(
       `SELECT * FROM users
@@ -234,87 +213,13 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
   }
 
   /**
-   * Create a new user (will sync to server)
-   */
-  async function createUser(
-    data: Omit<SyncedUser, "created_at" | "updated_at">
-  ): Promise<void> {
-    const worker = await pg.init();
-    await worker.query(
-      `INSERT INTO users (id, email, name, avatar_url, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-      [data.id, data.email, data.name, data.avatar_url]
-    );
-    if (autoRefresh) await refresh();
-  }
-
-  /**
-   * Update user data (will sync to server)
-   */
-  async function updateUser(
-    userId: string,
-    updates: Partial<Omit<SyncedUser, "id" | "created_at">>
-  ): Promise<void> {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (updates.email !== undefined) {
-      fields.push("email = $" + (values.length + 1));
-      values.push(updates.email);
-    }
-    if (updates.name !== undefined) {
-      fields.push("name = $" + (values.length + 1));
-      values.push(updates.name);
-    }
-    if (updates.avatar_url !== undefined) {
-      fields.push("avatar_url = $" + (values.length + 1));
-      values.push(updates.avatar_url);
-    }
-
-    if (fields.length === 0) return;
-
-    fields.push("updated_at = CURRENT_TIMESTAMP");
-    values.push(userId);
-
-    const worker = await pg.init();
-    await worker.query(
-      `UPDATE users SET ${fields.join(", ")} WHERE id = $${values.length}`,
-      values
-    );
-    if (autoRefresh) await refresh();
-  }
-
-  /**
-   * Delete a user (will sync to server)
-   */
-  async function deleteUser(userId: string): Promise<void> {
-    const worker = await pg.init();
-    await worker.query("DELETE FROM users WHERE id = $1", [userId]);
-    if (autoRefresh) await refresh();
-  }
-
-  /**
-   * Clear all user data from local DB
-   * Call this on logout
-   */
-  async function clearUserData(): Promise<void> {
-    // Stop sync first
-    stopSync();
-
-    const worker = await pg.init();
-    await worker.query("DELETE FROM users");
-    
-    // Clear reactive data
-    data.value = [];
-
-    console.log("User data cleared on logout");
-  }
-
-  /**
-   * Handle logout - clear data and stop sync
+   * Handle logout - stop sync and clear local data
+   * Call this when user logs out
    */
   async function logout(): Promise<void> {
-    await clearUserData();
+    stopSync();
+    data.value = [];
+    console.log("[useUserSync] Logged out, sync stopped");
   }
 
   return {
@@ -322,7 +227,7 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
     isSyncing: readonly(isSyncing),
     isUpToDate: readonly(isUpToDate),
     error: readonly(syncError),
-    
+
     // Reactive data (auto-updates with autoRefresh or manual refresh)
     data: readonly(data),
 
@@ -331,19 +236,42 @@ const _useUserSync = (options: UseUserSyncOptions = {}) => {
     stopSync,
     refresh,
 
-    // Query helpers (pages query themselves)
-    getCurrentUser,
-    getUserByEmail,
-    getAllUsers,
-    searchUsers,
+    // Query helpers (read-only, local data)
+    getById,
+    getByEmail,
+    getAll,
+    search,
 
-    // Mutations
-    createUser,
-    updateUser,
-    deleteUser,
-    clearUserData,
+    // Logout
     logout,
   };
 };
 
 export const useUserSync = createSharedComposable(_useUserSync);
+
+/**
+ * Usage example:
+ *
+ * ```ts
+ * // In a component
+ * const userSync = useUserSync()
+ *
+ * // Start syncing (read-only from server)
+ * await userSync.sync({
+ *   onInsert: (user) => console.log('New user:', user),
+ *   onUpdate: (user) => console.log('Updated:', user),
+ * })
+ *
+ * // Read local data
+ * const users = await userSync.getAll()
+ * // or use reactive data
+ * console.log(userSync.data.value)
+ *
+ * // To CREATE a user - use API, not this composable!
+ * const newUser = await $fetch('/api/users', {
+ *   method: 'POST',
+ *   body: { name: 'John', email: 'john@example.com' }
+ * })
+ * // Electric will sync the new user to local DB automatically
+ * ```
+ */
