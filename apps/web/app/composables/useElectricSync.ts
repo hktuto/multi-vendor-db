@@ -85,7 +85,6 @@ function getSharedShapes(): Map<string, SharedShapeInstance> {
   }
   if (!(window as any).__electricSharedShapes) {
     (window as any).__electricSharedShapes = new Map<string, SharedShapeInstance>();
-    console.log("[useElectricSync] Created global sharedShapes on window");
   }
   return (window as any).__electricSharedShapes;
 }
@@ -165,7 +164,6 @@ async function getOrCreateSharedShape(
 ): Promise<SharedShapeInstance> {
   // Return existing shared shape if already created
   const existing = getSharedShapes().get(shapeKey);
-  console.log(`[useElectricSync] Existing shared shape for ${shapeKey}:`, existing);
   if (existing) {
     return existing;
   }
@@ -173,7 +171,6 @@ async function getOrCreateSharedShape(
   // Check if there's already an in-flight creation promise for this shapeKey
   const inflight = getInflightPromises().get(shapeKey);
   if (inflight) {
-    console.log(`[useElectricSync] Waiting for in-flight shape ${shapeKey}`);
     // Wait for the existing creation to complete
     return await inflight;
   }
@@ -300,11 +297,6 @@ async function createSharedShape(
 
   sharedShape.shapeUnsubscribe = shapeUnsubscribe;
   getSharedShapes().set(shapeKey, sharedShape);
-
-  console.log(
-    `[useElectricSync] Created and stored shared shape for ${shapeKey}, total shapes:`,
-    getSharedShapes().size,
-  );
 
   return sharedShape;
 }
