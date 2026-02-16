@@ -10,6 +10,7 @@ const spaceId = route.params.id as string;
 
 // Use spaces composable
 const { switchSpace, queryMembers, getMySpaceRole } = useSpaces();
+const { currentUser } = useCurrentUser();
 
 // Switch to this space
 onMounted(() => {
@@ -27,7 +28,7 @@ const members = ref<any[]>([]);
 const isLoading = ref(false);
 
 // Check user role
-const myRole = ref<{ role: string | null; isAdmin: boolean; canManage: boolean }>({
+const myRole = ref<{ role: string | null; isAdmin: boolean; canManage: boolean; userId?: string }>({
   role: null,
   isAdmin: false,
   canManage: false,
@@ -44,7 +45,11 @@ async function loadMembers() {
       getMySpaceRole(spaceId),
     ]);
     members.value = membersData;
-    myRole.value = roleInfo;
+    myRole.value = { 
+      role: roleInfo.role, 
+      isAdmin: roleInfo.isAdmin, 
+      canManage: roleInfo.canManage,
+    };
   } finally {
     isLoading.value = false;
   }
@@ -53,6 +58,9 @@ async function loadMembers() {
 onMounted(() => {
   loadMembers();
 });
+
+// Get top members for avatar group
+const topMembers = computed(() => members.value.slice(0, 4));
 
 // Invite modal
 const showInviteModal = ref(false);
@@ -200,14 +208,19 @@ const columns = [
         </template>
 
         <template #right>
-          <UButton
-            v-if="canInvite"
-            color="primary"
-            icon="i-lucide-user-plus"
-            @click="showInviteModal = true"
-          >
-            Invite Member
-          </UButton>
+          <!-- Members Avatar Group -->
+          <div class="flex items-center gap-2">
+            <UAvatarGroup v-if="members.length > 0" :max="4" size="sm">
+              <UAvatar
+                v-for="member in topMembers"
+                :key="member.id"
+                :src="member.user?.avatar_url"
+                :alt="member.user?.name"
+                size="sm"
+              />
+            </UAvatarGroup>
+            <span class="text-sm text-dimmed">{{ members.length }} members</span>
+          </div>
         </template>
       </UDashboardNavbar>
 
@@ -231,13 +244,24 @@ const columns = [
             <template #header>
               <div class="flex items-center justify-between">
                 <h3 class="font-semibold">Members ({{ members.length }})</h3>
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-refresh-cw"
-                  :loading="isLoading"
-                  @click="loadMembers"
-                />
+                <div class="flex items-center gap-2">
+                  <UButton
+                    v-if="canInvite"
+                    color="primary"
+                    size="sm"
+                    icon="i-lucide-user-plus"
+                    @click="showInviteModal = true"
+                  >
+                    Invite
+                  </UButton>
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-refresh-cw"
+                    :loading="isLoading"
+                    @click="loadMembers"
+                  />
+                </div>
               </div>
             </template>
 
