@@ -192,16 +192,12 @@ async function recordMigration(
 }
 
 /**
- * Fetch migration SQL from public directory
+ * Fetch migration SQL from API
  */
 async function fetchMigrationSql(name: string): Promise<string | null> {
   try {
-    const response = await fetch(`/migrations/${name}.sql`);
-    if (!response.ok) {
-      console.warn(`[usePgWorker] Migration file not found: ${name}.sql`);
-      return null;
-    }
-    return await response.text();
+    const response = await $fetch<{ sql: string }>(`/api/pglite/migrations/${name}`);
+    return response.sql;
   } catch (error) {
     console.error(`[usePgWorker] Failed to fetch migration ${name}:`, error);
     return null;
@@ -209,7 +205,22 @@ async function fetchMigrationSql(name: string): Promise<string | null> {
 }
 
 /**
- * Run migrations from public directory
+ * Fetch list of available migrations from API
+ */
+async function fetchMigrationList(): Promise<Array<{ name: string; description: string }>> {
+  try {
+    const response = await $fetch<{ migrations: Array<{ name: string; description: string }> }>(
+      '/api/pglite/migrations'
+    );
+    return response.migrations;
+  } catch (error) {
+    console.error('[usePgWorker] Failed to fetch migration list:', error);
+    return [];
+  }
+}
+
+/**
+ * Run migrations from API
  * If migration fails, drops and recreates database
  */
 async function runMigrations(pg: PGliteWorker): Promise<void> {
@@ -221,12 +232,13 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
   // Get already applied migrations
   const applied = await getAppliedMigrations(pg);
 
-  // Define migrations in order
-  const migrations = [
-    { name: "0000_init_migrations", description: "Initialize migration tracking" },
-    { name: "0001_initial_schema", description: "Initial schema for users, companies, members" },
-    { name: "0002_spaces_and_items", description: "Replace workspaces with unified spaces schema" },
-  ];
+  // Fetch migration list from API
+  const migrations = await fetchMigrationList();
+  
+  if (migrations.length === 0) {
+    console.error('[usePgWorker] No migrations available from API');
+    return;
+  }
 
   let needsReset = false;
 
@@ -236,7 +248,7 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
       continue;
     }
 
-    // Fetch SQL from public directory
+    // Fetch SQL from API
     const sql = await fetchMigrationSql(migration.name);
     
     if (!sql && migration.name !== "0000_init_migrations") {
@@ -265,17 +277,14 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
     console.log(
       "[usePgWorker] Migration failed, resetting database..."
     );
-    await resetAndRecreate(pg, migrations);
+    await resetAndRecreate(pg);
   }
 }
 
 /**
  * Reset database and apply all migrations from scratch
  */
-async function resetAndRecreate(
-  pg: PGliteWorker,
-  migrations: Array<{ name: string; description: string }>
-): Promise<void> {
+async function resetAndRecreate(pg: PGliteWorker): Promise<void> {
   console.log("[usePgWorker] Dropping all tables...");
 
   // Get all tables
@@ -298,7 +307,8 @@ async function resetAndRecreate(
 
   console.log("[usePgWorker] Re-applying all migrations...");
 
-  // Re-apply all migrations
+  // Re-apply all migrations from API
+  const migrations = await fetchMigrationList();
   for (const migration of migrations) {
     const sql = await fetchMigrationSql(migration.name);
     if (sql) {
