@@ -91,10 +91,12 @@ const _useCompanies = () => {
     () => null
   );
 
-  // Data
+  // Data - only companies are global state
   const allCompanies = useState<SyncedCompany[]>("companies-all", () => []);
-  const allMembers = useState<SyncedCompanyMember[]>("companies-members", () => []);
-  const allInvites = useState<SyncedInvite[]>("companies-invites", () => []);
+  // Members and invites are queried on-demand, not stored in global state
+  // But we track if sync is active for these tables
+  const membersSyncActive = useState("companies-members-sync", () => false);
+  const invitesSyncActive = useState("companies-invites-sync", () => false);
 
   // Status
   const isLoading = useState("companies-loading", () => false);
@@ -106,6 +108,10 @@ const _useCompanies = () => {
   let unsubscribeMembers: (() => void) | null = null;
   let unsubscribeInvites: (() => void) | null = null;
 
+  // Change callbacks (pages can register to receive change notifications)
+  const membersChangeCallbacks = new Set<() => void>();
+  const invitesChangeCallbacks = new Set<() => void>();
+
   // Computed
   const currentCompany = computed(() => {
     if (!currentCompanyId.value) return null;
@@ -114,25 +120,71 @@ const _useCompanies = () => {
     );
   });
 
-  const members = computed(() => {
-    if (!currentCompanyId.value) return [];
-    return allMembers.value.filter(
-      (m) => m.company_id === currentCompanyId.value
-    );
-  });
+  /**
+   * Register a callback for members changes
+   */
+  function onMembersChange(callback: () => void): () => void {
+    membersChangeCallbacks.add(callback);
+    return () => membersChangeCallbacks.delete(callback);
+  }
 
-  // Invites for current company
-  const invites = computed(() => {
-    if (!currentCompanyId.value) return [];
-    return allInvites.value.filter(
-      (i) => i.company_id === currentCompanyId.value && i.status === 'pending'
-    );
-  });
+  /**
+   * Register a callback for invites changes
+   */
+  function onInvitesChange(callback: () => void): () => void {
+    invitesChangeCallbacks.add(callback);
+    return () => invitesChangeCallbacks.delete(callback);
+  }
 
-  const myRole = computed(() => {
-    // This requires current user ID - will be injected from useCurrentUser
-    return null;
-  });
+  /**
+   * Notify all registered callbacks
+   */
+  function notifyMembersChange() {
+    membersChangeCallbacks.forEach((cb) => cb());
+  }
+
+  function notifyInvitesChange() {
+    invitesChangeCallbacks.forEach((cb) => cb());
+  }
+
+  /**
+   * Query members for a specific company (on-demand)
+   */
+  async function queryMembers(companyId?: string): Promise<SyncedCompanyMember[]> {
+    const cid = companyId || currentCompanyId.value;
+    if (!cid) return [];
+
+    const worker = await pg.init();
+    const result = await worker.query<SyncedCompanyMember>(
+      "SELECT * FROM company_members WHERE company_id = $1 ORDER BY joined_at DESC",
+      [cid]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Query invites for a specific company (on-demand)
+   */
+  async function queryInvites(
+    companyId?: string,
+    status?: "pending" | "accepted" | "expired" | "cancelled"
+  ): Promise<SyncedInvite[]> {
+    const cid = companyId || currentCompanyId.value;
+    if (!cid) return [];
+
+    const worker = await pg.init();
+    let sql = "SELECT * FROM invites WHERE company_id = $1";
+    const params: any[] = [cid];
+
+    if (status) {
+      sql += " AND status = $2";
+      params.push(status);
+    }
+    sql += " ORDER BY created_at DESC";
+
+    const result = await worker.query<SyncedInvite>(sql, params);
+    return result.rows;
+  }
 
   /**
    * Switch to a different company
@@ -147,7 +199,7 @@ const _useCompanies = () => {
   }
 
   /**
-   * Refresh companies data from local DB
+   * Refresh companies data from local DB (global state)
    */
   async function refreshCompanies(): Promise<SyncedCompany[]> {
     const worker = await pg.init();
@@ -159,56 +211,64 @@ const _useCompanies = () => {
   }
 
   /**
-   * Refresh members data from local DB
+   * Check if user has specific role in company
    */
-  async function refreshMembers(): Promise<SyncedCompanyMember[]> {
+  async function checkRole(
+    userId: string,
+    companyId?: string,
+    requiredRole?: "owner" | "admin" | "member"
+  ): Promise<{ role: string | null; isOwner: boolean; isAdmin: boolean; canManage: boolean }> {
+    const cid = companyId || currentCompanyId.value;
+    if (!cid || !userId) {
+      return { role: null, isOwner: false, isAdmin: false, canManage: false };
+    }
+
     const worker = await pg.init();
-    const result = await worker.query<SyncedCompanyMember>(
-      "SELECT * FROM company_members ORDER BY joined_at DESC"
+    const result = await worker.query<{ role: string }>(
+      "SELECT role FROM company_members WHERE company_id = $1 AND user_id = $2",
+      [cid, userId]
     );
-    allMembers.value = result.rows;
-    return result.rows;
+
+    if (result.rows.length === 0) {
+      return { role: null, isOwner: false, isAdmin: false, canManage: false };
+    }
+
+    const role = result.rows[0].role;
+    const isOwner = role === "owner";
+    const isAdmin = role === "admin" || role === "owner";
+    const canManage = isAdmin;
+
+    return { role, isOwner, isAdmin, canManage };
   }
 
   /**
-   * Refresh invites data from local DB
+   * Start syncing companies (always sync)
+   * Optionally sync members and invites with callbacks only (no state)
    */
-  async function refreshInvites(): Promise<SyncedInvite[]> {
-    const worker = await pg.init();
-    const result = await worker.query<SyncedInvite>(
-      "SELECT * FROM invites ORDER BY created_at DESC"
-    );
-    allInvites.value = result.rows;
-    return result.rows;
-  }
-
-  /**
-   * Start syncing companies, members and invites
-   */
-  async function startSync() {
+  async function startSync(options?: {
+    syncMembers?: boolean;
+    syncInvites?: boolean;
+  }): Promise<void> {
     if (isLoading.value) return;
 
     isLoading.value = true;
     error.value = null;
 
     try {
-      // Load initial data
+      // Load initial companies data
       await refreshCompanies();
-      await refreshMembers();
-      await refreshInvites();
 
       // Set first company as current if none selected
       if (!currentCompanyId.value && allCompanies.value.length > 0) {
         currentCompanyId.value = allCompanies.value[0].id;
       }
 
-      // Subscribe to companies table
+      // Subscribe to companies table (global state)
       unsubscribeCompanies = await electric.subscribe<SyncedCompany>({
         table: "companies",
         callbacks: {
           onInsert: async (company) => {
             await refreshCompanies();
-            // Auto-select first company if none selected
             if (!currentCompanyId.value) {
               currentCompanyId.value = company.id;
             }
@@ -218,13 +278,11 @@ const _useCompanies = () => {
           },
           onDelete: async () => {
             await refreshCompanies();
-            // Clear current if deleted company was selected
             if (
               currentCompanyId.value &&
               !allCompanies.value.find((c) => c.id === currentCompanyId.value)
             ) {
-              currentCompanyId.value =
-                allCompanies.value[0]?.id || null;
+              currentCompanyId.value = allCompanies.value[0]?.id || null;
             }
           },
           onUpToDate: () => {
@@ -238,37 +296,31 @@ const _useCompanies = () => {
         },
       });
 
-      // Subscribe to company_members table
-      unsubscribeMembers = await electric.subscribe<SyncedCompanyMember>({
-        table: "company_members",
-        callbacks: {
-          onInsert: async () => {
-            await refreshMembers();
+      // Optionally sync members (no state, just callbacks)
+      if (options?.syncMembers !== false) {
+        membersSyncActive.value = true;
+        unsubscribeMembers = await electric.subscribe<SyncedCompanyMember>({
+          table: "company_members",
+          callbacks: {
+            onInsert: notifyMembersChange,
+            onUpdate: notifyMembersChange,
+            onDelete: notifyMembersChange,
           },
-          onUpdate: async () => {
-            await refreshMembers();
-          },
-          onDelete: async () => {
-            await refreshMembers();
-          },
-        },
-      });
+        });
+      }
 
-      // Subscribe to invites table
-      unsubscribeInvites = await electric.subscribe<SyncedInvite>({
-        table: "invites",
-        callbacks: {
-          onInsert: async () => {
-            await refreshInvites();
+      // Optionally sync invites (no state, just callbacks)
+      if (options?.syncInvites !== false) {
+        invitesSyncActive.value = true;
+        unsubscribeInvites = await electric.subscribe<SyncedInvite>({
+          table: "invites",
+          callbacks: {
+            onInsert: notifyInvitesChange,
+            onUpdate: notifyInvitesChange,
+            onDelete: notifyInvitesChange,
           },
-          onUpdate: async () => {
-            await refreshInvites();
-          },
-          onDelete: async () => {
-            await refreshInvites();
-          },
-        },
-      });
+        });
+      }
     } catch (err) {
       error.value = err as Error;
       isLoading.value = false;
@@ -285,8 +337,13 @@ const _useCompanies = () => {
     unsubscribeCompanies = null;
     unsubscribeMembers = null;
     unsubscribeInvites = null;
+    membersSyncActive.value = false;
+    invitesSyncActive.value = false;
     isLoading.value = false;
     isUpToDate.value = false;
+    // Clear callbacks
+    membersChangeCallbacks.clear();
+    invitesChangeCallbacks.clear();
   }
 
   // Auto start sync on mount (only if in client)
@@ -304,19 +361,24 @@ const _useCompanies = () => {
     currentCompanyId: readonly(currentCompanyId),
     currentCompany: readonly(currentCompany),
     allCompanies: readonly(allCompanies),
-    members: readonly(members),
-    invites: readonly(invites),
     isLoading: readonly(isLoading),
     isUpToDate: readonly(isUpToDate),
     error: readonly(error),
+    membersSyncActive: readonly(membersSyncActive),
+    invitesSyncActive: readonly(invitesSyncActive),
 
     // Actions
     switchCompany,
     refreshCompanies,
-    refreshMembers,
-    refreshInvites,
+    queryMembers,
+    queryInvites,
+    checkRole,
     startSync,
     stopSync,
+
+    // Change callbacks (pages register to receive notifications)
+    onMembersChange,
+    onInvitesChange,
   };
 };
 
@@ -324,78 +386,120 @@ export const useCompanies = createSharedComposable(_useCompanies);
 
 /**
  * Helper composable to get current user's role in current company
- * Requires useCurrentUser to be used in the same component
+ * Queries membership on-demand instead of storing in global state
  */
 export function useCurrentCompanyRole() {
   const companies = useCompanies();
   const { user } = useCurrentUser();
 
-  const myMembership = computed(() => {
-    if (!companies.currentCompany.value || !user.value) return null;
-    return companies.members.value.find((m) => m.user_id === user.value?.id);
-  });
-
-  const role = computed(() => myMembership.value?.role || null);
-
+  const role = ref<string | null>(null);
   const isOwner = computed(() => role.value === "owner");
   const isAdmin = computed(() => role.value === "admin" || role.value === "owner");
   const isMember = computed(() => !!role.value);
-
   const canManage = isAdmin;
 
+  // Query role when company or user changes
+  watch(
+    [() => companies.currentCompanyId.value, () => user.value?.id],
+    async ([companyId, userId]) => {
+      if (!companyId || !userId) {
+        role.value = null;
+        return;
+      }
+      const result = await companies.checkRole(userId, companyId);
+      role.value = result.role;
+    },
+    { immediate: true }
+  );
+
+  // Listen for members changes to update role
+  onMounted(() => {
+    const unsubscribe = companies.onMembersChange(async () => {
+      if (companies.currentCompanyId.value && user.value?.id) {
+        const result = await companies.checkRole(
+          user.value.id,
+          companies.currentCompanyId.value
+        );
+        role.value = result.role;
+      }
+    });
+
+    onUnmounted(unsubscribe);
+  });
+
   return {
-    role,
+    role: readonly(role),
     isOwner,
     isAdmin,
     isMember,
     canManage,
-    membership: myMembership,
   };
 }
 
 /**
  * Helper composable for company-specific data operations
+ * Provides reactive queries scoped to current company
  */
-export function useCompanyData(companyId?: string) {
+export function useCompanyQueries(companyId?: string) {
   const companies = useCompanies();
   const pg = usePgWorker();
 
   const targetCompanyId = computed(() => companyId || companies.currentCompanyId.value);
 
+  // Local state for queries
+  const members = ref<SyncedCompanyMember[]>([]);
+  const invites = ref<SyncedInvite[]>([]);
+  const isLoadingMembers = ref(false);
+  const isLoadingInvites = ref(false);
+
   /**
-   * Query data scoped to current/target company
+   * Load members for current company
    */
-  async function query<T = any>(sql: string, params?: any[]): Promise<T[]> {
-    const worker = await pg.init();
-    // Add company_id filter automatically if table has it
-    const result = await worker.query<T>(sql, params);
-    return result.rows;
+  async function loadMembers() {
+    if (!targetCompanyId.value) return;
+    isLoadingMembers.value = true;
+    members.value = await companies.queryMembers(targetCompanyId.value);
+    isLoadingMembers.value = false;
   }
 
   /**
-   * Check if user has specific role in company
+   * Load invites for current company
    */
-  async function checkRole(userId: string, requiredRole: "owner" | "admin" | "member"): Promise<boolean> {
-    const cid = targetCompanyId.value;
-    if (!cid) return false;
-
-    const worker = await pg.init();
-    const result = await worker.query<{ role: string }>(
-      "SELECT role FROM company_members WHERE company_id = $1 AND user_id = $2",
-      [cid, userId]
-    );
-
-    if (result.rows.length === 0) return false;
-
-    const role = result.rows[0].role;
-    if (requiredRole === "member") return ["member", "admin", "owner"].includes(role);
-    if (requiredRole === "admin") return ["admin", "owner"].includes(role);
-    return role === "owner";
+  async function loadInvites(status?: 'pending' | 'accepted' | 'expired' | 'cancelled') {
+    if (!targetCompanyId.value) return;
+    isLoadingInvites.value = true;
+    invites.value = await companies.queryInvites(targetCompanyId.value, status);
+    isLoadingInvites.value = false;
   }
+
+  // Auto-load when company changes
+  watch(targetCompanyId, () => {
+    loadMembers();
+    loadInvites('pending');
+  }, { immediate: true });
+
+  // Listen for changes and reload
+  onMounted(() => {
+    const unsubMembers = companies.onMembersChange(() => {
+      loadMembers();
+    });
+    const unsubInvites = companies.onInvitesChange(() => {
+      loadInvites('pending');
+    });
+
+    onUnmounted(() => {
+      unsubMembers();
+      unsubInvites();
+    });
+  });
 
   return {
     companyId: targetCompanyId,
-    query,
-    checkRole,
+    members: readonly(members),
+    invites: readonly(invites),
+    isLoadingMembers: readonly(isLoadingMembers),
+    isLoadingInvites: readonly(isLoadingInvites),
+    loadMembers,
+    loadInvites,
   };
 }
