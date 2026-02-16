@@ -67,26 +67,10 @@ export const TABLE_SCHEMAS: Record<string, string> = {
       UNIQUE(group_id, user_id)
     )
   `,
-  workspaces: `
-    CREATE TABLE IF NOT EXISTS workspaces (
+  spaces: `
+    CREATE TABLE IF NOT EXISTS spaces (
       id TEXT PRIMARY KEY,
       company_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      icon TEXT,
-      color TEXT,
-      menu JSONB DEFAULT '[]',
-      created_by TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      deleted_at TEXT
-    )
-  `,
-  folders: `
-    CREATE TABLE IF NOT EXISTS folders (
-      id TEXT PRIMARY KEY,
-      company_id TEXT NOT NULL,
-      workspace_id TEXT NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
       icon TEXT,
@@ -96,6 +80,45 @@ export const TABLE_SCHEMAS: Record<string, string> = {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT
+    )
+  `,
+  space_members: `
+    CREATE TABLE IF NOT EXISTS space_members (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      joined_at TEXT NOT NULL,
+      invited_by TEXT,
+      UNIQUE(space_id, user_id)
+    )
+  `,
+  space_items: `
+    CREATE TABLE IF NOT EXISTS space_items (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL,
+      parent_id TEXT,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      color TEXT,
+      order_index INTEGER DEFAULT 0,
+      config JSONB DEFAULT '{}',
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    )
+  `,
+  space_item_permissions: `
+    CREATE TABLE IF NOT EXISTS space_item_permissions (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      permission TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(item_id, user_id)
     )
   `,
   invite_links: `
