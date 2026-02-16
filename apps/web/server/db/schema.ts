@@ -113,52 +113,64 @@ export const inviteLinks = pgTable('invite_links', {
 ])
 
 // ============================================
-// WORKSPACE & FOLDERS
+// SPACE & ITEMS (Unified Design)
 // ============================================
 
-// Menu item type for JSONB
-interface MenuItem {
-  id: string
-  type: 'folder' | 'table' | 'view' | 'dashboard'
-  itemId: string
-  order: number
-  children?: MenuItem[]
-  permissions: {
-    read: string[]
-    readwrite: string[]
-    manage: string[]
-  }
-}
-
-export const workspaces = pgTable('workspaces', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
+export const spaces = pgTable('spaces', {
+  id: uuid('id').primaryKey(),
   companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
   icon: varchar('icon', { length: 50 }),
   color: varchar('color', { length: 7 }),
-  menu: jsonb('menu').$type<MenuItem[]>().default([]).notNull(),
+  settings: jsonb('settings').default({}).notNull(),
   createdBy: uuid('created_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
-// Folders are flat - hierarchy is in workspace.menu JSONB
-export const folders = pgTable('folders', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  // Note: parent_id removed - hierarchy is in workspace.menu JSONB
+export const spaceMembers = pgTable('space_members', {
+  id: uuid('id').primaryKey(),
+  spaceId: uuid('space_id').notNull().references(() => spaces.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'editor' | 'viewer'>(),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+  invitedBy: uuid('invited_by').references(() => users.id),
+}, (table) => [
+  unique('unique_space_member').on(table.spaceId, table.userId),
+])
+
+// Unified items table - folder, table, view, dashboard all in one
+export const spaceItems = pgTable('space_items', {
+  id: uuid('id').primaryKey(),
+  spaceId: uuid('space_id').notNull().references(() => spaces.id, { onDelete: 'cascade' }),
+  parentId: uuid('parent_id').references(() => spaceItems.id),
+  type: varchar('type', { length: 50 }).notNull().$type<'folder' | 'table' | 'view' | 'dashboard'>(),
   name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
   icon: varchar('icon', { length: 50 }),
   color: varchar('color', { length: 7 }),
   orderIndex: integer('order_index').default(0).notNull(),
+  config: jsonb('config').default({}).notNull(),
   createdBy: uuid('created_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+}, (table) => [
+  unique('unique_space_item_name').on(table.spaceId, table.parentId, table.name),
+])
+
+// Item-level permissions - extends space membership
+export const spaceItemPermissions = pgTable('space_item_permissions', {
+  id: uuid('id').primaryKey(),
+  itemId: uuid('item_id').notNull().references(() => spaceItems.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  permission: varchar('permission', { length: 20 }).notNull().$type<'read' | 'readwrite' | 'manage'>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique('unique_item_user_permission').on(table.itemId, table.userId),
+])
 
 // ============================================
 // RELATIONS (for Drizzle ORM query builder)
@@ -185,8 +197,7 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
   }),
   members: many(companyMembers),
   groups: many(userGroups),
-  workspaces: many(workspaces),
-  folders: many(folders),
+  spaces: many(spaces),
   inviteLinks: many(inviteLinks),
 }))
 
@@ -251,29 +262,58 @@ export const inviteLinksRelations = relations(inviteLinks, ({ one }) => ({
   }),
 }))
 
-export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
+// Space Relations
+export const spacesRelations = relations(spaces, ({ one, many }) => ({
   company: one(companies, {
-    fields: [workspaces.companyId],
+    fields: [spaces.companyId],
     references: [companies.id],
   }),
   createdByUser: one(users, {
-    fields: [workspaces.createdBy],
+    fields: [spaces.createdBy],
     references: [users.id],
   }),
-  folders: many(folders),
+  members: many(spaceMembers),
+  items: many(spaceItems),
 }))
 
-export const foldersRelations = relations(folders, ({ one }) => ({
-  company: one(companies, {
-    fields: [folders.companyId],
-    references: [companies.id],
+export const spaceMembersRelations = relations(spaceMembers, ({ one }) => ({
+  space: one(spaces, {
+    fields: [spaceMembers.spaceId],
+    references: [spaces.id],
   }),
-  workspace: one(workspaces, {
-    fields: [folders.workspaceId],
-    references: [workspaces.id],
+  user: one(users, {
+    fields: [spaceMembers.userId],
+    references: [users.id],
+  }),
+  invitedByUser: one(users, {
+    fields: [spaceMembers.invitedBy],
+    references: [users.id],
+  }),
+}))
+
+export const spaceItemsRelations = relations(spaceItems, ({ one, many }) => ({
+  space: one(spaces, {
+    fields: [spaceItems.spaceId],
+    references: [spaces.id],
+  }),
+  parent: one(spaceItems, {
+    fields: [spaceItems.parentId],
+    references: [spaceItems.id],
   }),
   createdByUser: one(users, {
-    fields: [folders.createdBy],
+    fields: [spaceItems.createdBy],
+    references: [users.id],
+  }),
+  permissions: many(spaceItemPermissions),
+}))
+
+export const spaceItemPermissionsRelations = relations(spaceItemPermissions, ({ one }) => ({
+  item: one(spaceItems, {
+    fields: [spaceItemPermissions.itemId],
+    references: [spaceItems.id],
+  }),
+  user: one(users, {
+    fields: [spaceItemPermissions.userId],
     references: [users.id],
   }),
 }))
