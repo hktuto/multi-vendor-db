@@ -1,7 +1,5 @@
-import { db } from "@nuxthub/db";
-import { spaces } from "@nuxthub/db/schema";
-import { inArray, isNull } from "drizzle-orm";
-import { companyMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
+import { inArray, isNull, eq } from "drizzle-orm";
 
 /**
  * GET /api/spaces

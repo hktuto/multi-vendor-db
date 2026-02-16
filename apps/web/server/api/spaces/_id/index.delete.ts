@@ -1,5 +1,4 @@
-import { db } from "@nuxthub/db";
-import { spaces, spaceMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull } from "drizzle-orm";
 
 /**
@@ -40,12 +39,12 @@ export default defineEventHandler(async (event) => {
 
   // Soft delete (archive)
   const [updated] = await db
-    .update(spaces)
+    .update(schema.spaces)
     .set({
       deletedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(and(eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
+    .where(and(eq(schema.spaces.id, spaceId), isNull(schema.spaces.deletedAt)))
     .returning();
 
   if (!updated) {

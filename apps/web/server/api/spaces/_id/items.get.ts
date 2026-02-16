@@ -1,5 +1,4 @@
-import { db } from "@nuxthub/db";
-import { spaceItems, spaceMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull, asc } from "drizzle-orm";
 
 /**

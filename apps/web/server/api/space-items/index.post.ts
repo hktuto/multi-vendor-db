@@ -1,5 +1,4 @@
-import { db } from "@nuxthub/db";
-import { spaceItems, spaceMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { uuidv7 } from "uuidv7";
@@ -80,7 +79,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [item] = await db
-    .insert(spaceItems)
+    .insert(schema.spaceItems)
     .values({
       id: uuidv7(),
       spaceId: input.spaceId,

@@ -1,5 +1,4 @@
-import { db } from "@nuxthub/db";
-import { spaces, spaceMembers, companyMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { uuidv7 } from "uuidv7";
@@ -50,8 +49,8 @@ export default defineEventHandler(async (event) => {
   const spaceId = uuidv7();
 
   // Create space
-  const [space] = await db
-    .insert(spaces)
+  const [newSpace] = await db
+    .insert(schema.spaces)
     .values({
       id: spaceId,
       companyId: input.companyId,
@@ -67,7 +66,7 @@ export default defineEventHandler(async (event) => {
     .returning();
 
   // Auto-add creator as admin
-  await db.insert(spaceMembers).values({
+  await db.insert(schema.spaceMembers).values({
     id: uuidv7(),
     spaceId: spaceId,
     userId: session.user.id,
@@ -76,5 +75,5 @@ export default defineEventHandler(async (event) => {
     invitedBy: null,
   });
 
-  return space;
+  return newSpace;
 });

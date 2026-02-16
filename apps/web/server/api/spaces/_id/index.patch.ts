@@ -1,5 +1,4 @@
-import { db } from "@nuxthub/db";
-import { spaces, spaceMembers } from "@nuxthub/db/schema";
+import { db, schema } from "@nuxthub/db";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 
@@ -52,12 +51,12 @@ export default defineEventHandler(async (event) => {
 
   // Update space
   const [updated] = await db
-    .update(spaces)
+    .update(schema.spaces)
     .set({
       ...input,
       updatedAt: new Date(),
     })
-    .where(eq(spaces.id, spaceId))
+    .where(eq(schema.spaces.id, spaceId))
     .returning();
 
   if (!updated) {
