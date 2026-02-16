@@ -50,26 +50,22 @@ interface CallbackRegistration<
 }
 
 /**
- * Shared shape instance - one per shapeKey, shared across all components
+ * Shared shape instance - one per table, shared across all components
  */
 interface SharedShapeInstance {
-  /** syncShapeToTable result (for data persistence) */
+  /** syncShapeToTable result (for cleanup) */
   shape: SyncShapeToTableResult;
-  /** ShapeStream instance (for real-time events) */
+  /** ShapeStream for real-time events */
   shapeStream: ShapeStream;
-  /** Shape instance (for consuming events) */
-  shapeInstance: Shape;
-  /** Table name */
+  /** Table name (also used as shapeKey) */
   table: string;
-  /** Shape key */
-  shapeKey: string;
-  /** Primary key columns */
+  /** Primary key columns (for extracting ID from delete messages) */
   primaryKey: string[];
-  /** Registered component callbacks - multiple components can register */
+  /** Registered component callbacks */
   callbacks: Map<string, CallbackRegistration>;
   /** Whether initial sync is complete */
   isUpToDate: boolean;
-  /** Unsubscribe function from Shape */
+  /** Unsubscribe function from ShapeStream */
   shapeUnsubscribe?: () => void;
 }
 
@@ -253,55 +249,48 @@ async function createSharedShape(
     params: { table },
   });
 
-  const shapeInstance = new Shape(shapeStream);
-
-  // 3. Create shared instance
+  // 3. Create shared instance (simplified - removed shapeInstance)
   const sharedShape: SharedShapeInstance = {
     shape,
     shapeStream,
-    shapeInstance,
     table,
-    shapeKey,
     primaryKey,
     callbacks: new Map(),
     isUpToDate: false,
   };
 
   // 4. Subscribe to shape changes and dispatch to all registered callbacks
-  const shapeUnsubscribe = shapeInstance.subscribe(async (messages) => {
+  // Use shapeStream.subscribe() directly for raw messages
+  const shapeUnsubscribe = shapeStream.subscribe(async (messages) => {
     // Handle both single message and array of messages
     const messageArray = Array.isArray(messages) ? messages : [messages];
-
+    
     for (const message of messageArray) {
       // Skip if message is not valid
-      if (!message || typeof message !== "object") {
-        console.warn("[useElectricSync] Invalid message received:", message);
+      if (!message || typeof message !== 'object') {
+        console.warn('[useElectricSync] Invalid message received:', message);
         continue;
       }
-
+      
       const operation = message.headers?.operation;
-
+      
       switch (operation) {
         case "insert": {
           const data = message.value as Record<string, any>;
-          await dispatchEvent(shapeKey, "insert", data);
+          await dispatchEvent(shapeKey, 'insert', data);
           break;
         }
         case "update": {
           const data = message.value as Record<string, any>;
-          // Note: old data isn't available from Electric messages directly
-          // We pass the same data as both new and old
-          await dispatchEvent(shapeKey, "update", data, data);
+          await dispatchEvent(shapeKey, 'update', data, data);
           break;
         }
         case "delete": {
-          // Try to get ID from the message
-          const id =
-            (message.key as string) ||
-            (message.value as any)?.id ||
-            (message.value as any)?.[sharedShape.primaryKey[0]];
+          const id = (message.key as string) ||
+                     (message.value as any)?.id ||
+                     (message.value as any)?.[primaryKey[0]];
           if (id) {
-            await dispatchEvent(shapeKey, "delete", undefined, id);
+            await dispatchEvent(shapeKey, 'delete', undefined, id);
           }
           break;
         }
