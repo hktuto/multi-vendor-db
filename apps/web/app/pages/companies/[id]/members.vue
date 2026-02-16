@@ -8,25 +8,30 @@ definePageMeta({
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const { user } = useUserSync();
 
 const companyId = route.params.id as string;
 
-// Fetch company
-const { data: companyData } = await useFetch(`/api/companies/${companyId}`);
-const company = computed(() => companyData.value?.company);
+// Use synced company data
+const { currentCompany, allCompanies, members: syncedMembers, switchCompany, isLoading: syncLoading } = useCompanies();
+const { role, isOwner, canManage } = useCurrentCompanyRole();
 
-// Navigation items for secondary nav
-const navItems = computed(() => [
-    { label: "General", to: `/companies/${companyId}` },
-    { label: "Members", to: `/companies/${companyId}/members` },
-]);
+// Switch to this company if not already current
+onMounted(() => {
+    if (currentCompany.value?.id !== companyId) {
+        switchCompany(companyId);
+    }
+});
 
-// Redirect if not found
+// Get company from synced data
+const company = computed(() => 
+    allCompanies.value.find(c => c.id === companyId) || null
+);
+
+// Watch for company not found
 watch(
     () => company.value,
     (val) => {
-        if (!val) {
+        if (!syncLoading.value && allCompanies.value.length > 0 && !val) {
             toast.add({
                 title: "Company not found",
                 description: "The company you are looking for does not exist",
@@ -37,15 +42,17 @@ watch(
     },
 );
 
-// Fetch members
-const {
-    data: membersData,
-    pending: membersPending,
-    refresh: refreshMembers,
-} = await useFetch(`/api/companies/${companyId}/members`);
-const members = computed(() => membersData.value?.members || []);
+// Navigation items for secondary nav
+const navItems = computed(() => [
+    { label: "General", to: `/companies/${companyId}` },
+    { label: "Members", to: `/companies/${companyId}/members` },
+]);
 
-// Fetch invites
+// Use synced members data
+const members = computed(() => syncedMembers.value);
+const membersPending = computed(() => syncLoading.value);
+
+// Fetch invites (not yet synced - using API)
 const {
     data: invitesData,
     pending: invitesPending,
@@ -53,12 +60,7 @@ const {
 } = await useFetch(`/api/companies/${companyId}/invites`);
 const invites = computed(() => invitesData.value?.invites || []);
 
-const canManage = computed(() => {
-    if (!company.value) return false;
-    return company.value.myRole === "owner" || company.value.myRole === "admin";
-});
-
-const isOwner = computed(() => company.value?.myRole === "owner");
+const { user: currentUser } = useCurrentUser();
 
 // Member table columns
 const columns: TableColumn<any>[] = [
@@ -115,15 +117,15 @@ const columns: TableColumn<any>[] = [
         header: "",
         cell: ({ row }) => {
             const member = row.original;
-            const isSelf = member.userId === user.value?.id;
+            const isSelf = member.userId === currentUser.value?.id;
 
             // Don't show actions for owner
             if (member.role === "owner") return null;
 
-            const canEdit =
+            const canEditMember =
                 isOwner.value || (canManage.value && member.role !== "admin");
 
-            if (!canEdit && !isSelf) return null;
+            if (!canEditMember && !isSelf) return null;
 
             return h("div", { class: "flex items-center justify-end gap-2" }, [
                 isOwner.value &&
