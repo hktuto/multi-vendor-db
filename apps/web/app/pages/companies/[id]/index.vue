@@ -9,12 +9,23 @@ const toast = useToast()
 
 const companyId = route.params.id as string
 
-const { data, pending, refresh } = await useFetch(`/api/companies/${companyId}`)
-const company = computed(() => data.value?.company)
+// Use synced company data
+const { allCompanies, currentCompany, switchCompany, isLoading: pending } = useCompanies()
+const { isOwner, canManage } = useCurrentCompanyRole()
 
-// Redirect if not found
+// Switch to this company if not current
+onMounted(() => {
+  switchCompany(companyId)
+})
+
+// Get company from synced data
+const company = computed(() => 
+  allCompanies.value.find(c => c.id === companyId) || null
+)
+
+// Watch for company not found
 watch(() => company.value, (val) => {
-  if (!pending.value && !val) {
+  if (!pending.value && allCompanies.value.length > 0 && !val) {
     toast.add({
       title: 'Company not found',
       description: 'The company you are looking for does not exist',
@@ -23,13 +34,6 @@ watch(() => company.value, (val) => {
     router.push('/companies')
   }
 })
-
-const canManage = computed(() => {
-  if (!company.value) return false
-  return company.value.myRole === 'owner' || company.value.myRole === 'admin'
-})
-
-const isOwner = computed(() => company.value?.myRole === 'owner')
 
 // Navigation items for secondary nav
 const navItems = computed(() => [
@@ -95,7 +99,7 @@ async function saveChanges() {
     })
     
     isEditing.value = false
-    await refresh()
+    // Data will sync automatically via Electric
   } catch (error: any) {
     toast.add({
       title: 'Error',
