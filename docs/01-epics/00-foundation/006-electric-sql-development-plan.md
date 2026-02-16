@@ -887,3 +887,383 @@ const { user } = useCurrentUser({
 - [ ] Update error handling to use returned `error` ref
 - [ ] Move callbacks from `sync()` to composable options
 
+---
+
+## Query-on-Demand Architecture
+
+This section documents the new data layering strategy that distinguishes between **global state** (persisted, always-available) and **query-on-demand** (fetched when needed, automatically cleaned up).
+
+### 1. Data Layering Design
+
+| Data Type | Pattern | Persistence | Lifecycle | Use Case |
+|-----------|---------|-------------|-----------|----------|
+| **Companies** | Global State | Long-term cache | Shared across pages | Company list, current company context |
+| **Members** | Query-on-Demand | Session-only | Page/component scope | Member management pages |
+| **Invites** | Query-on-Demand | Temporary (expiring) | Feature scope | Invite management, pending approvals |
+
+**Rationale:**
+- **Companies** are needed throughout the app (sidebar, navigation, context switching) and should always be available
+- **Members** are only needed on specific pages (team management, settings) and can be fetched on-demand
+- **Invites** are temporary data with natural expiration; keeping them in global state creates stale data issues
+
+### 2. New API Pattern
+
+The query-on-demand API provides reactive data fetching with automatic cleanup:
+
+#### Change Notification Registration
+
+```typescript
+// Register for member change notifications
+const unsubscribeMembers = onMembersChange((change) => {
+  console.log('Members changed:', change);
+  // Re-query members or update UI
+});
+
+// Register for invite change notifications
+const unsubscribeInvites = onInvitesChange((change) => {
+  console.log('Invites changed:', change);
+  // Re-query invites or update UI
+});
+
+// Cleanup when component unmounts
+onUnmounted(() => {
+  unsubscribeMembers();
+  unsubscribeInvites();
+});
+```
+
+#### On-Demand Queries
+
+```typescript
+// Query members for a specific company
+const members = await queryMembers(companyId);
+
+// Query all invites for a company
+const invites = await queryInvites(companyId);
+
+// Query invites filtered by status
+const pendingInvites = await queryInvites(companyId, 'pending');
+const expiredInvites = await queryInvites(companyId, 'expired');
+```
+
+#### Reactive Query Helper
+
+```typescript
+// useCompanyQueries - composable for reactive on-demand queries
+const {
+  members,        // Ref<CompanyMember[]>
+  invites,        // Ref<CompanyInvite[]>
+  isLoading,      // Ref<boolean>
+  isError,        // Ref<boolean>
+  error,          // Ref<Error | null>
+  refreshMembers, // () => Promise<void>
+  refreshInvites, // () => Promise<void>
+} = useCompanyQueries(companyId, {
+  // Options
+  fetchMembers: true,    // Auto-fetch members
+  fetchInvites: true,    // Auto-fetch invites
+  inviteStatus: 'pending', // Filter invites by status
+});
+```
+
+### 3. Migration from Old Pattern
+
+#### Before (Global State)
+
+```typescript
+// ❌ Old pattern - all data in global state
+const { members, invites } = useCompanies();
+
+// Problems:
+// - Members loaded even when not needed
+// - Invites never expire, become stale
+// - Memory pressure from unused data
+// - Manual sync management required
+```
+
+#### After (Query-on-Demand)
+
+```typescript
+// ✅ New pattern - fetch only when needed
+// In a team management page/component:
+const companyId = useRoute().params.companyId;
+
+// Option 1: Use the reactive composable
+const { members, invites, refreshMembers } = useCompanyQueries(companyId, {
+  fetchMembers: true,
+  fetchInvites: true,
+});
+
+// Option 2: Manual query with change notifications
+onMounted(async () => {
+  // Initial fetch
+  const members = await queryMembers(companyId);
+  
+  // Listen for changes
+  const unsub = onMembersChange((change) => {
+    if (change.companyId === companyId) {
+      // Refresh data when changes occur
+      queryMembers(companyId).then(updateUI);
+    }
+  });
+  
+  onUnmounted(unsub);
+});
+```
+
+### 4. Usage Examples
+
+#### Example 1: Team Management Page
+
+```vue
+<script setup>
+const route = useRoute();
+const companyId = route.params.companyId;
+
+// Reactive query - auto-fetches on mount, cleans up on unmount
+const { 
+  members, 
+  isLoading, 
+  error,
+  refreshMembers 
+} = useCompanyQueries(companyId, { 
+  fetchMembers: true 
+});
+
+// Handle member removal
+async function removeMember(memberId) {
+  await $fetch(`/api/companies/${companyId}/members/${memberId}`, {
+    method: 'DELETE'
+  });
+  // Change notification will trigger auto-refresh
+}
+</script>
+
+<template>
+  <div>
+    <h1>Team Members</h1>
+    
+    <div v-if="isLoading">Loading members...</div>
+    <div v-else-if="error">Error: {{ error.message }}</div>
+    <ul v-else>
+      <li v-for="member in members" :key="member.id">
+        {{ member.name }} ({{ member.role }})
+        <button @click="removeMember(member.id)">Remove</button>
+      </li>
+    </ul>
+  </div>
+</template>
+```
+
+#### Example 2: Invite Management with Status Filter
+
+```vue
+<script setup>
+const companyId = useRoute().params.companyId;
+const filter = ref('pending'); // 'pending' | 'accepted' | 'expired'
+
+// Watch filter changes and re-query
+const { invites, refreshInvites } = useCompanyQueries(companyId, {
+  fetchInvites: true,
+  inviteStatus: filter, // Reactive filter
+});
+
+// Or manual approach for more control
+const invites = ref([]);
+
+async function loadInvites() {
+  invites.value = await queryInvites(companyId, filter.value);
+}
+
+// Auto-refresh when invites change
+onInvitesChange((change) => {
+  if (change.companyId === companyId) {
+    loadInvites();
+  }
+});
+
+onMounted(loadInvites);
+</script>
+```
+
+#### Example 3: Combined Usage (Members + Invites)
+
+```vue
+<script setup>
+const companyId = useRoute().params.companyId;
+
+// Fetch both members and invites
+const { 
+  members, 
+  invites,
+  isLoading,
+  refreshMembers,
+  refreshInvites 
+} = useCompanyQueries(companyId, {
+  fetchMembers: true,
+  fetchInvites: true,
+});
+
+// Combined computed for total team size
+const totalTeamSize = computed(() => 
+  members.value.length + invites.value.filter(i => i.status === 'pending').length
+);
+
+// Manually refresh both
+async function handleInviteSent() {
+  await refreshInvites();
+  await refreshMembers(); // In case invite was auto-accepted
+}
+</script>
+```
+
+### 5. Benefits of New Design
+
+| Benefit | Description |
+|---------|-------------|
+| **Reduced Global State** | Only companies and core entities persist globally; transient data is fetched on-demand |
+| **Automatic Cleanup** | Query-on-demand data is automatically released when components unmount or pages navigate away |
+| **Still Real-Time Sync** | Change notifications ensure UI stays synchronized without polling |
+| **More Flexible Data Fetching** | Status filters, pagination, and conditional fetching are easier to implement |
+| **Better Memory Management** | No accumulation of stale invite data; members unloaded when not needed |
+| **Faster Initial Load** | Global state only includes essential data; secondary data loads on demand |
+| **Cleaner Architecture** | Clear separation between "always needed" and "contextually needed" data |
+
+### 6. API Reference
+
+#### `onMembersChange(callback)`
+
+Registers a callback for member data changes.
+
+```typescript
+function onMembersChange(
+  callback: (change: MemberChangeEvent) => void
+): () => void;
+
+interface MemberChangeEvent {
+  type: 'insert' | 'update' | 'delete';
+  companyId: string;
+  memberId: string;
+  data?: CompanyMember;
+}
+```
+
+**Returns:** Unsubscribe function
+
+---
+
+#### `onInvitesChange(callback)`
+
+Registers a callback for invite data changes.
+
+```typescript
+function onInvitesChange(
+  callback: (change: InviteChangeEvent) => void
+): () => void;
+
+interface InviteChangeEvent {
+  type: 'insert' | 'update' | 'delete';
+  companyId: string;
+  inviteId: string;
+  data?: CompanyInvite;
+}
+```
+
+**Returns:** Unsubscribe function
+
+---
+
+#### `queryMembers(companyId)`
+
+Fetches members for a specific company on-demand.
+
+```typescript
+function queryMembers(companyId: string): Promise<CompanyMember[]>;
+
+interface CompanyMember {
+  id: string;
+  company_id: string;
+  user_id: string;
+  role: 'owner' | 'admin' | 'member';
+  name: string;
+  email: string;
+  avatar_url?: string;
+  joined_at: string;
+}
+```
+
+---
+
+#### `queryInvites(companyId, status?)`
+
+Fetches invites for a company, optionally filtered by status.
+
+```typescript
+function queryInvites(
+  companyId: string, 
+  status?: 'pending' | 'accepted' | 'expired'
+): Promise<CompanyInvite[]>;
+
+interface CompanyInvite {
+  id: string;
+  company_id: string;
+  email: string;
+  role: 'admin' | 'member';
+  status: 'pending' | 'accepted' | 'expired';
+  invited_by: string;
+  invited_at: string;
+  expires_at: string;
+  accepted_at?: string;
+}
+```
+
+---
+
+#### `useCompanyQueries(companyId, options)`
+
+Composable for reactive on-demand queries.
+
+```typescript
+function useCompanyQueries(
+  companyId: string | Ref<string>,
+  options?: CompanyQueriesOptions
+): CompanyQueriesReturn;
+
+interface CompanyQueriesOptions {
+  fetchMembers?: boolean;        // Auto-fetch members on mount
+  fetchInvites?: boolean;        // Auto-fetch invites on mount
+  inviteStatus?: string | Ref<string>; // Filter invites by status
+}
+
+interface CompanyQueriesReturn {
+  // Data
+  members: Ref<CompanyMember[]>;
+  invites: Ref<CompanyInvite[]>;
+  
+  // State
+  isLoading: Ref<boolean>;
+  isError: Ref<boolean>;
+  error: Ref<Error | null>;
+  
+  // Actions
+  refreshMembers: () => Promise<void>;
+  refreshInvites: () => Promise<void>;
+  refreshAll: () => Promise<void>;
+}
+```
+
+### 7. Migration Checklist
+
+When migrating from the old global state pattern to query-on-demand:
+
+- [ ] Identify pages/components that use `members` from global state
+- [ ] Identify pages/components that use `invites` from global state
+- [ ] Replace `const { members } = useCompanies()` with `useCompanyQueries()`
+- [ ] Remove manual `sync()` calls for members/invites
+- [ ] Add `onMembersChange` listeners where real-time updates are needed
+- [ ] Add `onInvitesChange` listeners where real-time updates are needed
+- [ ] Ensure proper cleanup in `onUnmounted` for change listeners
+- [ ] Update templates to handle `isLoading` states
+- [ ] Test navigation between member-heavy and member-free pages
+- [ ] Verify memory usage doesn't grow unbounded with invite data
+
