@@ -525,6 +525,217 @@ export default defineTask({
     console.log('  6. Test permissions: viewer cannot create items, editor can, admin can manage')
     console.log('')
 
+    // ============== CREATE DEMO TABLE WITH COLUMNS & ROWS ==============
+    console.log('\n📊 Creating demo table with columns and rows (FEAT-021)...')
+
+    // Create "Orders" Table in Engineering space
+    const ordersTable = await db.insert(schema.spaceItems).values({
+      id: uuidv7(),
+      spaceId: spaces[0].id,
+      parentId: null,
+      type: 'table',
+      name: 'Orders',
+      description: 'Customer orders tracking',
+      icon: '📦',
+      color: '#3b82f6',
+      orderIndex: 2,
+      config: {},
+      createdBy: users[0].id,
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    // Create columns for Orders table
+    const colCustomer = await db.insert(schema.spaceItemColumns).values({
+      id: uuidv7(),
+      itemId: ordersTable[0].id,
+      name: 'Customer',
+      key: 'customer_a1x2b',
+      category: 'information',
+      type: 'text',
+      orderIndex: 0,
+      config: { maxLength: 255 },
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    const colProduct = await db.insert(schema.spaceItemColumns).values({
+      id: uuidv7(),
+      itemId: ordersTable[0].id,
+      name: 'Product',
+      key: 'product_c3d4e',
+      category: 'information',
+      type: 'select',
+      orderIndex: 1,
+      config: { 
+        options: [
+          { id: 'p1', label: 'Laptop', color: '#3b82f6' },
+          { id: 'p2', label: 'Mouse', color: '#10b981' },
+          { id: 'p3', label: 'Keyboard', color: '#f59e0b' }
+        ]
+      },
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    const colQuantity = await db.insert(schema.spaceItemColumns).values({
+      id: uuidv7(),
+      itemId: ordersTable[0].id,
+      name: 'Quantity',
+      key: 'quantity_f5g6h',
+      category: 'information',
+      type: 'number',
+      orderIndex: 2,
+      config: { min: 1, max: 999 },
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    const colPrice = await db.insert(schema.spaceItemColumns).values({
+      id: uuidv7(),
+      itemId: ordersTable[0].id,
+      name: 'Unit Price',
+      key: 'unit_price_i7j8k',
+      category: 'information',
+      type: 'number',
+      orderIndex: 3,
+      config: { decimal: 2, min: 0 },
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    const colStatus = await db.insert(schema.spaceItemColumns).values({
+      id: uuidv7(),
+      itemId: ordersTable[0].id,
+      name: 'Status',
+      key: 'status_l9m0n',
+      category: 'information',
+      type: 'select',
+      orderIndex: 4,
+      config: {
+        options: [
+          { id: 'pending', label: 'Pending', color: '#f59e0b' },
+          { id: 'processing', label: 'Processing', color: '#3b82f6' },
+          { id: 'shipped', label: 'Shipped', color: '#10b981' },
+          { id: 'cancelled', label: 'Cancelled', color: '#ef4444' }
+        ]
+      },
+      defaultValue: 'pending',
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    const colTotal = await db.insert(schema.spaceItemColumns).values({
+      id: uuidv7(),
+      itemId: ordersTable[0].id,
+      name: 'Total',
+      key: 'total_o1p2q',
+      category: 'dynamic',
+      type: 'formula',
+      orderIndex: 5,
+      config: {
+        expression: '{{quantity_f5g6h}} * {{unit_price_i7j8k}}',
+        dependencies: ['quantity_f5g6h', 'unit_price_i7j8k'],
+        format: { type: 'currency', symbol: '$', decimal: 2 }
+      },
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    console.log(`  ✓ Orders table with ${6} columns created`)
+    console.log(`    - Information: Customer, Product, Quantity, Unit Price, Status`)
+    console.log(`    - Dynamic: Total (formula)`)
+
+    // Create demo rows
+    const demoRows = [
+      { customer: 'ABC Corp', product: 'p1', quantity: 5, price: 1200, status: 'shipped' },
+      { customer: 'XYZ Ltd', product: 'p2', quantity: 10, price: 25, status: 'processing' },
+      { customer: 'TechStart Inc', product: 'p1', quantity: 3, price: 1200, status: 'pending' },
+      { customer: 'Global Dynamics', product: 'p3', quantity: 8, price: 150, status: 'shipped' },
+      { customer: 'Acme Corp', product: 'p2', quantity: 20, price: 25, status: 'cancelled' }
+    ]
+
+    for (const rowData of demoRows) {
+      await db.insert(schema.spaceItemRows).values({
+        id: uuidv7(),
+        companyId: companies[0].id,
+        spaceId: spaces[0].id,
+        itemId: ordersTable[0].id,
+        data: {
+          [colCustomer[0].key]: { value: rowData.customer, type: 'text' },
+          [colProduct[0].key]: { value: rowData.product, type: 'select', display: rowData.product },
+          [colQuantity[0].key]: { value: rowData.quantity, type: 'number' },
+          [colPrice[0].key]: { value: rowData.price, type: 'number' },
+          [colStatus[0].key]: { value: rowData.status, type: 'select', display: rowData.status },
+          [colTotal[0].key]: { value: rowData.quantity * rowData.price, type: 'formula', display: `$${(rowData.quantity * rowData.price).toFixed(2)}` }
+        },
+        createdBy: users[0].id,
+        createdAt: now
+      })
+    }
+    console.log(`  ✓ ${demoRows.length} demo rows created`)
+
+    // Create a View based on Orders table
+    const shippedView = await db.insert(schema.spaceItems).values({
+      id: uuidv7(),
+      spaceId: spaces[0].id,
+      parentId: null,
+      type: 'view',
+      name: 'Shipped Orders',
+      description: 'View of shipped orders only',
+      icon: '✅',
+      color: '#10b981',
+      orderIndex: 3,
+      config: {
+        // View-specific config
+        column_order: [colCustomer[0].id, colProduct[0].id, colQuantity[0].id, colTotal[0].id],
+        filters: [
+          { column: colStatus[0].key, operator: 'equals', value: 'shipped' }
+        ],
+        sorts: [
+          { column: colTotal[0].key, direction: 'desc' }
+        ],
+        view_type: 'grid'
+      },
+      createdBy: users[0].id,
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    // View can have its own dynamic column (but stored in Orders table)
+    const colDiscount = await db.insert(schema.spaceItemColumns).values({
+      id: uuidv7(),
+      itemId: ordersTable[0].id,  // Belongs to table, not view
+      name: 'Discounted Total',
+      key: 'discounted_r3s4t',
+      category: 'dynamic',
+      type: 'formula',
+      orderIndex: 6,
+      config: {
+        expression: '{{total_o1p2q}} * 0.9',
+        dependencies: ['total_o1p2q'],
+        format: { type: 'currency', symbol: '$', decimal: 2 }
+      },
+      createdAt: now,
+      updatedAt: now
+    }).returning()
+
+    // Update view config to include the new dynamic column
+    await db.update(schema.spaceItems)
+      .set({
+        config: {
+          column_order: [colCustomer[0].id, colProduct[0].id, colTotal[0].id, colDiscount[0].id],
+          filters: [{ column: colStatus[0].key, operator: 'equals', value: 'shipped' }],
+          sorts: [{ column: colTotal[0].key, direction: 'desc' }],
+          view_type: 'grid'
+        },
+        updatedAt: now
+      })
+      .where(eq(schema.spaceItems.id, shippedView[0].id))
+
+    console.log(`  ✓ View "Shipped Orders" created with filters and sorts`)
+    console.log(`  ✓ View dynamic column "Discounted Total" added to Orders table`)
+
     return {
       result: 'Database seeded successfully',
       summary: {

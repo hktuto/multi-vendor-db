@@ -397,3 +397,81 @@ export const spaceItemPermissionsRelations = relations(
     }),
   }),
 );
+
+// ============================================
+// SPACE ITEM COLUMNS & ROWS (FEAT-021)
+// ============================================
+
+export const spaceItemColumns = pgTable(
+  "space_item_columns",
+  {
+    id: uuid("id").primaryKey(),
+    itemId: uuid("item_id").notNull(), // 指向 space_items (一定是 Table)
+    
+    name: varchar("name", { length: 255 }).notNull(),
+    key: varchar("key", { length: 255 }).notNull(), // 唯一 key (自動生成)
+    
+    // Column 分類: information, relation, dynamic
+    category: varchar("category", { length: 20 }).notNull(),
+    
+    // 具體類型
+    type: varchar("type", { length: 50 }).notNull(),
+    
+    orderIndex: integer("order_index").default(0).notNull(),
+    
+    // 配置 (根據 type 不同結構)
+    config: jsonb("config").default({}).notNull(),
+    
+    // 預設值
+    defaultValue: jsonb("default_value"),
+    
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("unique_item_column_key").on(table.itemId, table.key),
+  ],
+);
+
+export const spaceItemRows = pgTable("space_item_rows", {
+  id: uuid("id").primaryKey(),
+  companyId: uuid("company_id").notNull(), // Partition key
+  spaceId: uuid("space_id").notNull(),
+  itemId: uuid("item_id").notNull(), // 指向 Table (不是 View)
+  
+  // 數據存 JSONB
+  data: jsonb("data").default({}).notNull(),
+  
+  // Metadata
+  createdBy: uuid("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedBy: uuid("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+  deletedBy: uuid("deleted_by"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+// ============================================
+// RELATIONS for new tables
+// ============================================
+
+export const spaceItemColumnsRelations = relations(spaceItemColumns, ({ one }) => ({
+  item: one(spaceItems, {
+    fields: [spaceItemColumns.itemId],
+    references: [spaceItems.id],
+  }),
+}));
+
+export const spaceItemRowsRelations = relations(spaceItemRows, ({ one }) => ({
+  item: one(spaceItems, {
+    fields: [spaceItemRows.itemId],
+    references: [spaceItems.id],
+  }),
+}));
