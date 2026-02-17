@@ -1,77 +1,44 @@
-import { spaceItems } from '../../db/schema'
-import { eq, and } from 'drizzle-orm'
 import { db } from '@nuxthub/db'
+import { eq } from 'drizzle-orm'
+import { spaceItems } from '../../../db/schema'
+
+// PATCH /api/space-items/[id] - Update item (including config)
 export default defineEventHandler(async (event) => {
   const itemId = getRouterParam(event, 'id')
-
+  
   if (!itemId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Item ID is required'
-    })
+    throw createError({ statusCode: 400, statusMessage: 'Item ID required' })
   }
 
   const { user } = await requireUserSession(event)
-
-
-  // Get the item
-  const item = await db.query.spaceItems.findFirst({
-    where: eq(spaceItems.id, itemId)
-  })
-
-  if (!item) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Item not found'
-    })
-  }
-
-  // Check space membership
-  const membership = await db.query.spaceMembers.findFirst({
-    where: (members, { eq, and }) => and(
-      eq(members.spaceId, item.spaceId),
-      eq(members.userId, user.id)
-    )
-  })
-
-  if (!membership) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Access denied'
-    })
-  }
-
-  // Check permissions (admin or editor, or item creator)
-  const canEdit = membership.role === 'admin' ||
-                  membership.role === 'editor' ||
-                  item.createdBy === user.id
-
-  if (!canEdit) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Insufficient permissions'
-    })
-  }
-
   const body = await readBody(event)
-  const { name, description, parentId, icon, color, config } = body
 
-  // Build update object
-  const updateData: Partial<typeof spaceItems.$inferInsert> = {
-    updatedAt: new Date()
+  try {
+    const updates: any = {
+      updatedAt: new Date()
+    }
+
+    // Allow updating these fields
+    if (body.name !== undefined) updates.name = body.name
+    if (body.description !== undefined) updates.description = body.description
+    if (body.icon !== undefined) updates.icon = body.icon
+    if (body.color !== undefined) updates.color = body.color
+    if (body.config !== undefined) updates.config = body.config
+
+    const [updated] = await db.update(spaceItems)
+      .set(updates)
+      .where(eq(spaceItems.id, itemId))
+      .returning()
+
+    if (!updated) {
+      throw createError({ statusCode: 404, statusMessage: 'Item not found' })
+    }
+
+    return updated
+  } catch (error: any) {
+    throw createError({ 
+      statusCode: 500, 
+      statusMessage: error.message || 'Failed to update item' 
+    })
   }
-
-  if (name !== undefined) updateData.name = name
-  if (description !== undefined) updateData.description = description
-  if (parentId !== undefined) updateData.parentId = parentId
-  if (icon !== undefined) updateData.icon = icon
-  if (color !== undefined) updateData.color = color
-  if (config !== undefined) updateData.config = config
-
-  const [updatedItem] = await db.update(spaceItems)
-    .set(updateData)
-    .where(eq(spaceItems.id, itemId))
-    .returning()
-
-  return updatedItem
 })
