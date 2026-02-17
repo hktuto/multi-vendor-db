@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SyncedSpaceItem } from '~/composables/useSpaces'
-import { VueDraggableNext } from 'vue-draggable-next'
+import draggable from 'vuedraggable'
 
 const props = defineProps<{
   item: SyncedSpaceItem & { children?: any[]; level?: number }
@@ -163,7 +163,7 @@ function selectItem(event?: MouseEvent) {
       v-if="item.type === 'folder' && isExpanded && item.children?.length"
       class="folder-children"
     >
-      <VueDraggableNext
+      <draggable
         v-model="draggableChildren"
         :group="{ name: 'space-items', pull: true, put: true }"
         ghost-class="ghost-item"
@@ -188,7 +188,7 @@ function selectItem(event?: MouseEvent) {
             @reorder="$emit('reorder', $event)"
           />
         </template>
-      </VueDraggableNext>
+      </draggable>
     </div>
   </div>
 </template>

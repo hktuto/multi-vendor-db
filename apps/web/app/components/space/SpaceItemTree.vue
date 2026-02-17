@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SyncedSpaceItem } from '~/composables/useSpaces'
-import { VueDraggableNext } from 'vue-draggable-next'
+import draggable from 'vuedraggable'
 
 const props = defineProps<{
   spaceId: string
@@ -33,26 +33,18 @@ const createItemType = ref<'folder' | 'table' | 'view' | 'dashboard'>('folder')
 const renamingItem = ref<SyncedSpaceItem | null>(null)
 const deletingItem = ref<SyncedSpaceItem | null>(null)
 
-// Computed tree structure
-const treeItems = computed(() => {
-  return buildItemTree(items.value)
+// Computed root items (for display and drag)
+const rootItems = computed(() => {
+  return items.value.filter(item => !item.parent_id).sort((a, b) => a.order_index - b.order_index)
 })
 
-// Draggable root items
-const draggableRootItems = computed({
-  get: () => treeItems.value,
-  set: (value) => {
-    // Emit reorder event for root items
-    if (value.length > 0) {
-      const updates = value.map((item, index) => ({
-        id: item.id,
-        orderIndex: index,
-        parentId: null
-      }))
-      onReorder(updates)
-    }
-  }
-})
+// Writable root items for drag
+const rootItemsForDrag = ref<SyncedSpaceItem[]>([])
+
+// Watch items and update rootItemsForDrag
+watch(() => items.value, (newItems) => {
+  rootItemsForDrag.value = newItems.filter(item => !item.parent_id).sort((a, b) => a.order_index - b.order_index)
+}, { immediate: true, deep: true })
 
 // Load items from local PGlite
 async function loadItems() {
@@ -65,7 +57,7 @@ async function loadItems() {
     console.log('[SpaceItemTree] result isArray:', Array.isArray(result))
     console.log('[SpaceItemTree] result length:', result?.length)
     items.value = result
-    console.log('[SpaceItemTree] treeItems computed:', treeItems.value)
+    console.log('[SpaceItemTree] rootItemsForDrag:', rootItemsForDrag.value)
     // Expand all folders by default
     expandAllFolders()
   } catch (error) {
@@ -315,6 +307,28 @@ onMounted(() => {
   }
 })
 
+// Handle drag end
+async function onDragEnd(evt: any) {
+  // evt.oldIndex, evt.newIndex from Sortable.js
+  if (evt.oldIndex === evt.newIndex) return
+  
+  // Update order indexes based on new order in rootItemsForDrag
+  const updates = rootItemsForDrag.value.map((item, index) => ({
+    id: item.id,
+    orderIndex: index,
+    parentId: null as string | null
+  }))
+  
+  if (updates.length > 0) {
+    await onReorder(updates)
+  }
+}
+
+// Get children for an item
+function getItemChildren(parentId: string): SyncedSpaceItem[] {
+  return items.value.filter(item => item.parent_id === parentId)
+}
+
 // Expose reload method
 defineExpose({
   reload: loadItems
@@ -348,7 +362,7 @@ defineExpose({
     <!-- Tree Content -->
     <div class="flex-1 overflow-auto py-2">
       <!-- Empty State -->
-      <div v-if="!isLoading && treeItems.length === 0" class="flex flex-col items-center justify-center py-8 px-4 text-center">
+      <div v-if="!isLoading && rootItemsForDrag.length === 0" class="flex flex-col items-center justify-center py-8 px-4 text-center">
         <UIcon name="i-lucide-folder-open" class="w-10 h-10 text-dimmed mb-3" />
         <p class="text-sm text-dimmed">No items yet</p>
         <p class="text-xs text-dimmed mt-1">Click + to create your first item</p>
@@ -359,25 +373,34 @@ defineExpose({
         <USkeleton v-for="i in 5" :key="i" class="h-8" />
       </div>
 
-      <!-- Tree Items -->
-      <div v-else class="space-y-0.5">
-        <SpaceItemTreeNode
-          v-for="item in treeItems"
-          :key="item.id"
-          :item="item"
-          :space-id="spaceId"
-          :expanded-folders="expandedFolders"
-          :selected-id="selectedItemId"
-          :highlighted-ids="highlightedItems"
-          :just-created-id="justCreatedItemId"
-          @toggle="toggleFolder"
-          @select="handleSelect"
-          @create="handleCreate"
-          @rename="handleRename"
-          @delete="handleDelete"
-          @reorder="onReorder"
-        />
-      </div>
+      <!-- Tree Items with Drag and Drop -->
+      <draggable
+        v-else
+        v-model="rootItemsForDrag"
+        :group="{ name: 'space-items' }"
+        ghost-class="ghost-item"
+        drag-class="dragging-item"
+        class="draggable-container"
+        item-key="id"
+        @end="onDragEnd"
+      >
+        <template #item="{ element: item }">
+          <SpaceItemTreeNode
+            :item="{ ...item, children: getItemChildren(item.id) }"
+            :space-id="spaceId"
+            :expanded-folders="expandedFolders"
+            :selected-id="selectedItemId"
+            :highlighted-ids="highlightedItems"
+            :just-created-id="justCreatedItemId"
+            @toggle="toggleFolder"
+            @select="handleSelect"
+            @create="handleCreate"
+            @rename="handleRename"
+            @delete="handleDelete"
+            @reorder="onReorder"
+          />
+        </template>
+      </draggable>
     </div>
 
     <!-- Create Folder Modal -->
