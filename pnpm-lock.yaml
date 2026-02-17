@@ -56,6 +56,9 @@ importers:
       uuidv7:
         specifier: ^1.1.0
         version: 1.1.0
+      vue-draggable-next:
+        specifier: ^2.3.0
+        version: 2.3.0(sortablejs@1.14.0)(vue@3.5.28(typescript@5.9.3))
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -68,7 +71,7 @@ importers:
         version: 3.23.0(happy-dom@17.6.3)(magicast@0.5.2)(typescript@5.9.3)(vitest@3.2.4(happy-dom@17.6.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(yaml@2.8.2))
       '@nuxt/ui':
         specifier: ^4.4.0
-        version: 4.4.0(@tiptap/extensions@3.19.0(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0))(@tiptap/y-tiptap@3.0.2(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)(prosemirror-view@1.41.6)(y-protocols@1.0.7(yjs@13.6.29))(yjs@13.6.29))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.3.15)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260214.0)(@electric-sql/pglite@0.3.15)(postgres@3.4.8)))(embla-carousel@8.6.0)(ioredis@5.9.3)(magicast@0.5.2)(tailwindcss@4.1.18)(typescript@5.9.3)(vite@7.3.1(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(yaml@2.8.2))(vue-router@4.6.4(vue@3.5.28(typescript@5.9.3)))(vue@3.5.28(typescript@5.9.3))(yjs@13.6.29)(zod@4.3.6)
+        version: 4.4.0(@tiptap/extensions@3.19.0(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0))(@tiptap/y-tiptap@3.0.2(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)(prosemirror-view@1.41.6)(y-protocols@1.0.7(yjs@13.6.29))(yjs@13.6.29))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.3.15)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260214.0)(@electric-sql/pglite@0.3.15)(postgres@3.4.8)))(embla-carousel@8.6.0)(ioredis@5.9.3)(magicast@0.5.2)(sortablejs@1.14.0)(tailwindcss@4.1.18)(typescript@5.9.3)(vite@7.3.1(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(yaml@2.8.2))(vue-router@4.6.4(vue@3.5.28(typescript@5.9.3)))(vue@3.5.28(typescript@5.9.3))(yjs@13.6.29)(zod@4.3.6)
       '@nuxthub/core':
         specifier: 0.10.6
         version: 0.10.6(db0@0.3.4(@electric-sql/pglite@0.3.15)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260214.0)(@electric-sql/pglite@0.3.15)(postgres@3.4.8)))(ioredis@5.9.3)(magicast@0.5.2)(typescript@5.9.3)
@@ -5170,6 +5173,9 @@ packages:
     resolution: {integrity: sha512-HLpt+uLy/pxB+bum/9DzAgiKS8CX1EvbWxI4zlmgGCExImLdiad2iCwXT5Z4c9c3Eq8rP2318mPW2c+QbtjK8A==}
     engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
 
+  sortablejs@1.14.0:
+    resolution: {integrity: sha512-pBXvQCs5/33fdN1/39pPL0NZF20LeRbLQ5jtnheIPN9JQAaufGjKdWduZn4U7wCtVuzKhmRkI0DFYHYRbB2H1w==}
+
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -5804,6 +5810,12 @@ packages:
 
   vue-devtools-stub@0.1.0:
     resolution: {integrity: sha512-RutnB7X8c5hjq39NceArgXg28WZtZpGc3+J16ljMiYnFhKvd8hITxSWQSQ5bvldxMDU6gG5mkxl1MTQLXckVSQ==}
+
+  vue-draggable-next@2.3.0:
+    resolution: {integrity: sha512-ymbY0UIwfSdg0iDN/iyNNwUrTqZ/6KbPryzsvTNXBLuDCuOBdNijSK8yynNtmiSj6RapTPQfjLGQdJrZkzBd2w==}
+    peerDependencies:
+      sortablejs: ^1.14.0
+      vue: ^3.5.17
 
   vue-router@4.6.4:
     resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
@@ -6993,7 +7005,7 @@ snapshots:
       - magicast
       - typescript
 
-  '@nuxt/ui@4.4.0(@tiptap/extensions@3.19.0(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0))(@tiptap/y-tiptap@3.0.2(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)(prosemirror-view@1.41.6)(y-protocols@1.0.7(yjs@13.6.29))(yjs@13.6.29))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.3.15)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260214.0)(@electric-sql/pglite@0.3.15)(postgres@3.4.8)))(embla-carousel@8.6.0)(ioredis@5.9.3)(magicast@0.5.2)(tailwindcss@4.1.18)(typescript@5.9.3)(vite@7.3.1(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(yaml@2.8.2))(vue-router@4.6.4(vue@3.5.28(typescript@5.9.3)))(vue@3.5.28(typescript@5.9.3))(yjs@13.6.29)(zod@4.3.6)':
+  '@nuxt/ui@4.4.0(@tiptap/extensions@3.19.0(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0))(@tiptap/y-tiptap@3.0.2(prosemirror-model@1.25.4)(prosemirror-state@1.4.4)(prosemirror-view@1.41.6)(y-protocols@1.0.7(yjs@13.6.29))(yjs@13.6.29))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.3.15)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260214.0)(@electric-sql/pglite@0.3.15)(postgres@3.4.8)))(embla-carousel@8.6.0)(ioredis@5.9.3)(magicast@0.5.2)(sortablejs@1.14.0)(tailwindcss@4.1.18)(typescript@5.9.3)(vite@7.3.1(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.46.0)(yaml@2.8.2))(vue-router@4.6.4(vue@3.5.28(typescript@5.9.3)))(vue@3.5.28(typescript@5.9.3))(yjs@13.6.29)(zod@4.3.6)':
     dependencies:
       '@floating-ui/dom': 1.7.5
       '@iconify/vue': 5.0.0(vue@3.5.28(typescript@5.9.3))
@@ -7028,7 +7040,7 @@ snapshots:
       '@tiptap/vue-3': 3.19.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0)(vue@3.5.28(typescript@5.9.3))
       '@unhead/vue': 2.1.4(vue@3.5.28(typescript@5.9.3))
       '@vueuse/core': 14.2.1(vue@3.5.28(typescript@5.9.3))
-      '@vueuse/integrations': 14.2.1(change-case@5.4.4)(fuse.js@7.1.0)(vue@3.5.28(typescript@5.9.3))
+      '@vueuse/integrations': 14.2.1(change-case@5.4.4)(fuse.js@7.1.0)(sortablejs@1.14.0)(vue@3.5.28(typescript@5.9.3))
       '@vueuse/shared': 14.2.1(vue@3.5.28(typescript@5.9.3))
       colortranslator: 5.0.0
       consola: 3.4.2
@@ -8438,7 +8450,7 @@ snapshots:
       '@vueuse/shared': 14.2.1(vue@3.5.28(typescript@5.9.3))
       vue: 3.5.28(typescript@5.9.3)
 
-  '@vueuse/integrations@14.2.1(change-case@5.4.4)(fuse.js@7.1.0)(vue@3.5.28(typescript@5.9.3))':
+  '@vueuse/integrations@14.2.1(change-case@5.4.4)(fuse.js@7.1.0)(sortablejs@1.14.0)(vue@3.5.28(typescript@5.9.3))':
     dependencies:
       '@vueuse/core': 14.2.1(vue@3.5.28(typescript@5.9.3))
       '@vueuse/shared': 14.2.1(vue@3.5.28(typescript@5.9.3))
@@ -8446,6 +8458,7 @@ snapshots:
     optionalDependencies:
       change-case: 5.4.4
       fuse.js: 7.1.0
+      sortablejs: 1.14.0
 
   '@vueuse/metadata@10.11.1': {}
 
@@ -11348,6 +11361,8 @@ snapshots:
       ip-address: 10.1.0
       smart-buffer: 4.2.0
 
+  sortablejs@1.14.0: {}
+
   source-map-js@1.2.1: {}
 
   source-map-support@0.5.21:
@@ -11978,6 +11993,11 @@ snapshots:
       vue: 3.5.28(typescript@5.9.3)
 
   vue-devtools-stub@0.1.0: {}
+
+  vue-draggable-next@2.3.0(sortablejs@1.14.0)(vue@3.5.28(typescript@5.9.3)):
+    dependencies:
+      sortablejs: 1.14.0
+      vue: 3.5.28(typescript@5.9.3)
 
   vue-router@4.6.4(vue@3.5.28(typescript@5.9.3)):
     dependencies:

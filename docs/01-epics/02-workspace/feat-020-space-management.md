@@ -162,9 +162,9 @@ const unsubscribe = await electric.subscribe<SyncedSpace>({
 ## Tasks
 
 ### Phase 1: Core
-- [ ] 創建 `useSpaces()` composable
-- [ ] 實現 Electric Sync for spaces 表
-- [ ] 創建 `/spaces/index.vue` 列表頁
+- [x] 創建 `useSpaces()` composable
+- [x] 實現 Electric Sync for spaces 表
+- [x] 創建 `/spaces/index.vue` 列表頁
 - [ ] 創建 `/spaces/new.vue` 創建頁面
 - [ ] 創建 `/spaces/[id]/settings.vue` 設定頁
 

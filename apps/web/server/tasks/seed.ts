@@ -37,21 +37,25 @@ export default defineTask({
   async run() {
     console.log('🌱 Seeding database with test data...\n')
 
-    // Check if already seeded
-    const existingUser = await db.query.users.findFirst({
-      where: eq(schema.users.email, TEST_USERS[0].email)
-    })
-
-    if (existingUser) {
-      console.log('⚠️  Database already seeded, skipping...')
-      return {
-        result: 'Database already seeded',
-        data: { user: { id: existingUser.id, email: existingUser.email } }
-      }
-    }
-
     const now = new Date()
     const passwordHash = await hashPassword('admin123')
+
+    // ============== CLEAR EXISTING DATA ==============
+    console.log('🗑️  Clearing existing data...')
+    
+    // Delete in reverse order to avoid foreign key constraints
+    await db.delete(schema.inviteLinks)
+    await db.delete(schema.spaceItems)
+    await db.delete(schema.spaceMembers)
+    await db.delete(schema.spaces)
+    await db.delete(schema.userGroupMembers)
+    await db.delete(schema.userGroups)
+    await db.delete(schema.companyMembers)
+    await db.delete(schema.companies)
+    await db.delete(schema.userAccounts)
+    await db.delete(schema.users)
+    
+    console.log('  ✓ All existing data cleared')
 
     // ============== CREATE USERS ==============
     console.log('👥 Creating test users...')

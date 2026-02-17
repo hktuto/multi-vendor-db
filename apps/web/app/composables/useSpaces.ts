@@ -127,6 +127,7 @@ const _useSpaces = () => {
   // Track subscription cleanup
   let unsubscribeSpaces: (() => void) | null = null;
   let unsubscribeSpaceMembers: (() => void) | null = null;
+  let unsubscribeSpaceItems: (() => void) | null = null;
   let unsubscribeUsers: (() => void) | null = null;
 
   /**
@@ -386,6 +387,16 @@ const _useSpaces = () => {
         },
       });
 
+      // Subscribe to space_items table
+      unsubscribeSpaceItems = await electric.subscribe<SyncedSpaceItem>({
+        table: "space_items",
+        callbacks: {
+          onError: (error) => {
+            console.error("Space items sync error:", error);
+          },
+        },
+      });
+
       // Initial load
       await refreshSpaces();
 
@@ -412,6 +423,10 @@ const _useSpaces = () => {
     if (unsubscribeSpaceMembers) {
       unsubscribeSpaceMembers();
       unsubscribeSpaceMembers = null;
+    }
+    if (unsubscribeSpaceItems) {
+      unsubscribeSpaceItems();
+      unsubscribeSpaceItems = null;
     }
     if (unsubscribeUsers) {
       unsubscribeUsers();
@@ -448,7 +463,7 @@ const _useSpaces = () => {
   async function queryMembers(spaceId: string): Promise<SyncedSpaceMember[]> {
     const worker = await pg.init();
     const result = await worker.query<SyncedSpaceMember & { user: { name: string; email: string; avatar_url: string } }>(
-      `SELECT sm.*, 
+      `SELECT sm.*,
         json_build_object(
           'name', u.name,
           'email', u.email,

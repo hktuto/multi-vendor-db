@@ -17,12 +17,6 @@ onMounted(() => {
   switchSpace(spaceId);
 });
 
-// Navigation items
-const navItems = computed(() => [
-  { label: "General", to: `/spaces/${spaceId}` },
-  { label: "Members", to: `/spaces/${spaceId}/members` },
-]);
-
 // Members data
 const members = ref<any[]>([]);
 const isLoading = ref(false);
@@ -199,161 +193,116 @@ const columns = [
 </script>
 
 <template>
-  <UDashboardPanel id="space-members">
-    <template #header>
-      <UDashboardNavbar title="Space Members">
-        <template #leading>
-          <UButton
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-arrow-left"
-            :to="`/spaces/${spaceId}`"
-          />
-        </template>
-
-        <template #right>
-          <!-- Members Avatar Group -->
-          <div class="flex items-center gap-2">
-            <UAvatarGroup v-if="members.length > 0" :max="4" size="sm">
-              <UAvatar
-                v-for="member in topMembers"
-                :key="member.id"
-                :src="member.user?.avatar_url"
-                :alt="member.user?.name"
+  <UContainer class="py-6">
+    <div class="max-w-4xl">
+      <UCard>
+        <template #header>
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold">Members ({{ members.length }})</h3>
+            <div class="flex items-center gap-2">
+              <UButton
+                v-if="canInvite"
+                color="primary"
                 size="sm"
+                icon="i-lucide-user-plus"
+                @click="showInviteModal = true"
+              >
+                Invite
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-refresh-cw"
+                :loading="isLoading"
+                @click="loadMembers"
               />
-            </UAvatarGroup>
-            <span class="text-sm text-dimmed">{{ members.length }} members</span>
+            </div>
           </div>
         </template>
-      </UDashboardNavbar>
 
-      <!-- Secondary Navigation -->
-      <UDashboardToolbar class="border-b border-default">
-        <template #left>
-          <UNavigationMenu
-            :items="navItems"
-            orientation="horizontal"
-            variant="link"
-            class="-mx-2"
-          />
-        </template>
-      </UDashboardToolbar>
-    </template>
-
-    <template #body>
-      <UContainer class="py-6">
-        <div class="max-w-4xl">
-          <UCard>
-            <template #header>
-              <div class="flex items-center justify-between">
-                <h3 class="font-semibold">Members ({{ members.length }})</h3>
-                <div class="flex items-center gap-2">
-                  <UButton
-                    v-if="canInvite"
-                    color="primary"
-                    size="sm"
-                    icon="i-lucide-user-plus"
-                    @click="showInviteModal = true"
-                  >
-                    Invite
-                  </UButton>
-                  <UButton
-                    color="neutral"
-                    variant="ghost"
-                    icon="i-lucide-refresh-cw"
-                    :loading="isLoading"
-                    @click="loadMembers"
-                  />
-                </div>
-              </div>
-            </template>
-
-            <UTable
-              :rows="members"
-              :columns="columns"
-              :loading="isLoading"
-            >
-              <template #user-data="{ row }">
-                <div class="flex items-center gap-3">
-                  <UAvatar
-                    :src="row.user?.avatar_url"
-                    :alt="row.user?.name"
-                    size="sm"
-                  />
-                  <div>
-                    <p class="font-medium">{{ row.user?.name || "Unknown" }}</p>
-                    <p class="text-sm text-dimmed">{{ row.user?.email }}</p>
-                  </div>
-                </div>
-              </template>
-
-              <template #role-data="{ row }">
-                <UBadge
-                  :color="roleColors[row.role] || 'neutral'"
-                  variant="soft"
-                >
-                  {{ row.role }}
-                </UBadge>
-              </template>
-
-              <template #joined-data="{ row }">
-                <span class="text-sm text-dimmed">
-                  {{ new Date(row.joined_at).toLocaleDateString() }}
-                </span>
-              </template>
-
-              <template #actions-data="{ row }">
-                <div class="flex items-center justify-end gap-2">
-                  <!-- Edit role dropdown (admin only) -->
-                  <UDropdown
-                    v-if="canInvite && row.user_id !== myRole.userId"
-                    :items="[
-                      roleOptions.map((opt) => ({
-                        label: `${opt.label} - ${opt.description}`,
-                        onSelect: () => updateRole(row.id, opt.value),
-                      })),
-                      [
-                        {
-                          label: 'Remove from space',
-                          color: 'error',
-                          icon: 'i-lucide-user-minus',
-                          onSelect: () => removeMember(row.id),
-                        },
-                      ],
-                    ]"
-                  >
-                    <UButton
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      icon="i-lucide-more-vertical"
-                      :loading="updatingMemberId === row.id"
-                    />
-                  </UDropdown>
-                </div>
-              </template>
-            </UTable>
-
-            <!-- Empty State -->
-            <div
-              v-if="!isLoading && members.length === 0"
-              class="text-center py-12"
-            >
-              <UIcon
-                name="i-lucide-users"
-                class="w-12 h-12 mx-auto mb-4 text-dimmed"
+        <UTable
+          :rows="members"
+          :columns="columns"
+          :loading="isLoading"
+        >
+          <template #user-data="{ row }">
+            <div class="flex items-center gap-3">
+              <UAvatar
+                :src="row.user?.avatar_url"
+                :alt="row.user?.name"
+                size="sm"
               />
-              <p class="text-dimmed">No members yet</p>
-              <p v-if="canInvite" class="text-sm text-dimmed mt-1">
-                Invite members to collaborate in this space
-              </p>
+              <div>
+                <p class="font-medium">{{ row.user?.name || "Unknown" }}</p>
+                <p class="text-sm text-dimmed">{{ row.user?.email }}</p>
+              </div>
             </div>
-          </UCard>
+          </template>
+
+          <template #role-data="{ row }">
+            <UBadge
+              :color="roleColors[row.role] || 'neutral'"
+              variant="soft"
+            >
+              {{ row.role }}
+            </UBadge>
+          </template>
+
+          <template #joined-data="{ row }">
+            <span class="text-sm text-dimmed">
+              {{ new Date(row.joined_at).toLocaleDateString() }}
+            </span>
+          </template>
+
+          <template #actions-data="{ row }">
+            <div class="flex items-center justify-end gap-2">
+              <!-- Edit role dropdown (admin only) -->
+              <UDropdown
+                v-if="canInvite && row.user_id !== myRole.userId"
+                :items="[
+                  roleOptions.map((opt) => ({
+                    label: `${opt.label} - ${opt.description}`,
+                    onSelect: () => updateRole(row.id, opt.value),
+                  })),
+                  [
+                    {
+                      label: 'Remove from space',
+                      color: 'error',
+                      icon: 'i-lucide-user-minus',
+                      onSelect: () => removeMember(row.id),
+                    },
+                  ],
+                ]"
+              >
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-more-vertical"
+                  :loading="updatingMemberId === row.id"
+                />
+              </UDropdown>
+            </div>
+          </template>
+        </UTable>
+
+        <!-- Empty State -->
+        <div
+          v-if="!isLoading && members.length === 0"
+          class="text-center py-12"
+        >
+          <UIcon
+            name="i-lucide-users"
+            class="w-12 h-12 mx-auto mb-4 text-dimmed"
+          />
+          <p class="text-dimmed">No members yet</p>
+          <p v-if="canInvite" class="text-sm text-dimmed mt-1">
+            Invite members to collaborate in this space
+          </p>
         </div>
-      </UContainer>
-    </template>
-  </UDashboardPanel>
+      </UCard>
+    </div>
+  </UContainer>
 
   <!-- Invite Modal -->
   <UModal v-model:open="showInviteModal" title="Invite Member">
