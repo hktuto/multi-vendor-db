@@ -71,13 +71,7 @@ const isSidebarCollapsed = ref(false);
 
 // Handle tree item selection
 function handleItemSelect(item: any) {
-  // Navigate based on item type
-  if (item.type === 'folder') {
-    // Folders just expand/collapse, no navigation
-    return;
-  }
-
-  // Navigate to item detail page
+  // Navigate to item detail page (including folders)
   navigateTo(`/spaces/${spaceId}/items/${item.id}`);
 }
 </script>

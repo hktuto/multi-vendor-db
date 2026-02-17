@@ -109,12 +109,15 @@ export interface UpdateSpaceInput {
 const _useSpaces = () => {
   const electric = useElectricSync();
   const pg = usePgWorker();
-  const {loggedIn, user:currentUser} = useUserSession();
+  const { loggedIn, user: currentUser } = useUserSession();
   // const { currentUser } = useUserSync();
   const { allCompanies, currentCompanyId } = useCompanies();
 
   // Global state - current selected space
-  const currentSpaceId = useState<string | null>("spaces-current-id", () => null);
+  const currentSpaceId = useState<string | null>(
+    "spaces-current-id",
+    () => null,
+  );
 
   // Global state - all spaces (synced from all accessible companies)
   const allSpaces = useState<SyncedSpace[]>("spaces-all", () => []);
@@ -128,7 +131,6 @@ const _useSpaces = () => {
   let unsubscribeSpaces: (() => void) | null = null;
   let unsubscribeSpaceMembers: (() => void) | null = null;
   let unsubscribeSpaceItems: (() => void) | null = null;
-  let unsubscribeUsers: (() => void) | null = null;
 
   /**
    * Current space computed from allSpaces
@@ -164,21 +166,26 @@ const _useSpaces = () => {
       }
 
       // Check if current space belongs to new company
-      const currentSpaceBelongsToCompany = currentSpace.value?.company_id === newCompanyId;
+      const currentSpaceBelongsToCompany =
+        currentSpace.value?.company_id === newCompanyId;
 
       if (!currentSpaceBelongsToCompany) {
         // Current space not in new company, switch to first available
         const firstSpace = currentCompanySpaces.value[0];
         if (firstSpace) {
-          console.log(`[useSpaces] Company changed ${oldCompanyId} -> ${newCompanyId}, switching to space: ${firstSpace.name}`);
+          console.log(
+            `[useSpaces] Company changed ${oldCompanyId} -> ${newCompanyId}, switching to space: ${firstSpace.name}`,
+          );
           currentSpaceId.value = firstSpace.id;
         } else {
-          console.log(`[useSpaces] Company changed ${oldCompanyId} -> ${newCompanyId}, no spaces available`);
+          console.log(
+            `[useSpaces] Company changed ${oldCompanyId} -> ${newCompanyId}, no spaces available`,
+          );
           currentSpaceId.value = null;
         }
       }
     },
-    { immediate: true }
+    { immediate: true },
   );
 
   /**
@@ -237,7 +244,7 @@ const _useSpaces = () => {
 
       // Build IN clause for SQLite compatibility
       // SQLite doesn't support ANY($1) array syntax
-      const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(',');
+      const placeholders = companyIds.map((_, i) => `$${i + 1}`).join(",");
       const result = await worker.query<SyncedSpace>(
         `SELECT * FROM spaces
          WHERE company_id IN (${placeholders})
@@ -325,13 +332,6 @@ const _useSpaces = () => {
     syncError.value = null;
 
     try {
-      // Wait for companies to be available
-      if (allCompanies.value.length === 0) {
-        // Retry after a short delay
-        setTimeout(() => startSync(), 500);
-        return;
-      }
-
       const companyIds = allCompanies.value.map((c) => c.id);
 
       // Subscribe to spaces table (filtered by accessible companies)
@@ -377,16 +377,6 @@ const _useSpaces = () => {
         },
       });
 
-      // Subscribe to users table for member user info
-      unsubscribeUsers = await electric.subscribe({
-        table: "users",
-        callbacks: {
-          onError: (error) => {
-            console.error("Users sync error:", error);
-          },
-        },
-      });
-
       // Subscribe to space_items table
       unsubscribeSpaceItems = await electric.subscribe<SyncedSpaceItem>({
         table: "space_items",
@@ -428,10 +418,7 @@ const _useSpaces = () => {
       unsubscribeSpaceItems();
       unsubscribeSpaceItems = null;
     }
-    if (unsubscribeUsers) {
-      unsubscribeUsers();
-      unsubscribeUsers = null;
-    }
+
     isSyncing.value = false;
   }
 
@@ -462,7 +449,11 @@ const _useSpaces = () => {
    */
   async function queryMembers(spaceId: string): Promise<SyncedSpaceMember[]> {
     const worker = await pg.init();
-    const result = await worker.query<SyncedSpaceMember & { user: { name: string; email: string; avatar_url: string } }>(
+    const result = await worker.query<
+      SyncedSpaceMember & {
+        user: { name: string; email: string; avatar_url: string };
+      }
+    >(
       `SELECT sm.*,
         json_build_object(
           'name', u.name,
@@ -485,10 +476,17 @@ const _useSpaces = () => {
     items: SyncedSpaceItem[],
     parentId: string | null = null,
     level = 0,
-  ): Array<SyncedSpaceItem & { children: ReturnType<typeof buildItemTree>; level: number }> {
+  ): Array<
+    SyncedSpaceItem & {
+      children: ReturnType<typeof buildItemTree>;
+      level: number;
+    }
+  > {
     const children = items
       .filter((item) => item.parent_id === parentId)
-      .sort((a, b) => a.order_index - b.order_index || a.name.localeCompare(b.name));
+      .sort(
+        (a, b) => a.order_index - b.order_index || a.name.localeCompare(b.name),
+      );
 
     return children.map((item) => ({
       ...item,
@@ -553,9 +551,15 @@ export function useCurrentSpace() {
   const spaces = useSpaces();
 
   const items = useState<SyncedSpaceItem[]>("current-space-items", () => []);
-  const members = useState<SyncedSpaceMember[]>("current-space-members", () => []);
+  const members = useState<SyncedSpaceMember[]>(
+    "current-space-members",
+    () => [],
+  );
   const isLoadingItems = useState("current-space-loading-items", () => false);
-  const isLoadingMembers = useState("current-space-loading-members", () => false);
+  const isLoadingMembers = useState(
+    "current-space-loading-members",
+    () => false,
+  );
 
   /**
    * Load items for current space

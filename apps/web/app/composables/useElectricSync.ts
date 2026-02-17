@@ -2,7 +2,6 @@ import type {
   SyncShapeToTableResult,
   PGliteWithSync,
 } from "@electric-sql/pglite-sync";
-import { ShapeStream, Shape, type ShapeMessage } from "@electric-sql/client";
 import { getPgWorker } from "./usePgWorker";
 
 /**
@@ -21,6 +20,8 @@ export interface SyncEventCallbacks<
   onError?: (error: Error) => void | Promise<void>;
   /** Called when initial sync is complete (up-to-date) */
   onUpToDate?: () => void | Promise<void>;
+  /** Called when shape must refetch (e.g., after schema changes) */
+  onMustRefetch?: () => void | Promise<void>;
 }
 
 /**
@@ -55,8 +56,8 @@ interface CallbackRegistration<
 interface SharedShapeInstance {
   /** syncShapeToTable result (for cleanup) */
   shape: SyncShapeToTableResult;
-  /** ShapeStream for real-time events */
-  shapeStream: ShapeStream;
+  /** ShapeStream from syncShapeToTable - no separate stream needed */
+  shapeStream: any; // ShapeStream from shape.stream
   /** Table name (also used as shapeKey) */
   table: string;
   /** Primary key columns (for extracting ID from delete messages) */
@@ -116,7 +117,7 @@ function generateCallbackId(): string {
  */
 async function dispatchEvent<T extends Record<string, any>>(
   shapeKey: string,
-  eventType: "insert" | "update" | "delete" | "upToDate" | "error",
+  eventType: "insert" | "update" | "delete" | "upToDate" | "error" | "mustRefetch",
   data?: T,
   extra?: any,
 ) {
@@ -138,6 +139,9 @@ async function dispatchEvent<T extends Record<string, any>>(
           break;
         case "upToDate":
           await callbacks.onUpToDate?.();
+          break;
+        case "mustRefetch":
+          await callbacks.onMustRefetch?.();
           break;
         case "error":
           await callbacks.onError?.(extra as Error);
@@ -195,6 +199,7 @@ async function getOrCreateSharedShape(
 
 /**
  * Actually create the shared shape instance (internal implementation)
+ * Simplified: Use syncShapeToTable's returned stream directly instead of creating a separate ShapeStream
  */
 async function createSharedShape(
   table: string,
@@ -211,94 +216,115 @@ async function createSharedShape(
   // Create new shared shape
   const pg = (await getPgWorker()) as unknown as PGliteWithSync;
 
-  // 1. Start syncShapeToTable for data persistence to local PGlite
-  const shape = await pg.electric.syncShapeToTable({
-    shape: {
-      url: shapeUrl,
-      params: { table },
-    },
-    table,
-    primaryKey,
-    shapeKey,
-    onInitialSync: () => {
-      const sharedShape = getSharedShapes().get(shapeKey);
-      if (sharedShape) {
-        sharedShape.isUpToDate = true;
-        globalIsSyncing.value = false;
-        dispatchEvent(shapeKey, "upToDate");
-      }
-    },
-    onError: (error: Error | any) => {
-      const err = error instanceof Error ? error : new Error(String(error));
-      console.error(
-        `[useElectricSync] syncShapeToTable error for ${shapeKey}:`,
-        err,
-      );
-      globalError.value = err;
-      globalIsSyncing.value = false;
-      dispatchEvent(shapeKey, "error", undefined, err);
-    },
-  });
-
-  // 2. Start ShapeStream for real-time events
-  const shapeStream = new ShapeStream({
-    url: shapeUrl,
-    params: { table },
-  });
-
-  // 3. Create shared instance (simplified - removed shapeInstance)
+  // Create shared instance first (before syncShapeToTable completes)
   const sharedShape: SharedShapeInstance = {
-    shape,
-    shapeStream,
+    shape: null as any, // Will be set after syncShapeToTable
+    shapeStream: null as any, // Use shape.stream instead
     table,
     primaryKey,
     callbacks: new Map(),
     isUpToDate: false,
   };
 
-  // 4. Subscribe to shape changes and dispatch to all registered callbacks
-  // Use shapeStream.subscribe() directly for raw messages
-  const shapeUnsubscribe = shapeStream.subscribe(async (messages) => {
-    // Handle both single message and array of messages
-    const messageArray = Array.isArray(messages) ? messages : [messages];
-    
-    for (const message of messageArray) {
-      // Skip if message is not valid
-      if (!message || typeof message !== 'object') {
-        console.warn('[useElectricSync] Invalid message received:', message);
-        continue;
-      }
-      
-      const operation = message.headers?.operation;
-      
-      switch (operation) {
-        case "insert": {
-          const data = message.value as Record<string, any>;
-          await dispatchEvent(shapeKey, 'insert', data);
-          break;
-        }
-        case "update": {
-          const data = message.value as Record<string, any>;
-          await dispatchEvent(shapeKey, 'update', data, data);
-          break;
-        }
-        case "delete": {
-          const id = (message.key as string) ||
-                     (message.value as any)?.id ||
-                     (message.value as any)?.[primaryKey[0]];
-          if (id) {
-            await dispatchEvent(shapeKey, 'delete', undefined, id);
-          }
-          break;
-        }
-      }
-    }
-  });
-
-  sharedShape.shapeUnsubscribe = shapeUnsubscribe;
+  // Store early so other concurrent calls can find it
   getSharedShapes().set(shapeKey, sharedShape);
 
-  return sharedShape;
+  try {
+    // Start syncShapeToTable for data persistence to local PGlite
+    // Use syncShapeToTable's returned stream directly - no separate ShapeStream needed
+    const shape = await pg.electric.syncShapeToTable({
+      shape: {
+        url: shapeUrl,
+        params: { table },
+      },
+      table,
+      primaryKey,
+      shapeKey,
+      initialInsertMethod: 'csv', // Use CSV for faster initial sync
+      onInitialSync: () => {
+        const sharedShape = getSharedShapes().get(shapeKey);
+        if (sharedShape) {
+          sharedShape.isUpToDate = true;
+          globalIsSyncing.value = false;
+          dispatchEvent(shapeKey, "upToDate");
+        }
+      },
+      onError: (error: Error | any) => {
+        const err = error instanceof Error ? error : new Error(String(error));
+        console.error(
+          `[useElectricSync] syncShapeToTable error for ${shapeKey}:`,
+          err,
+        );
+        globalError.value = err;
+        globalIsSyncing.value = false;
+        dispatchEvent(shapeKey, "error", undefined, err);
+      },
+      onMustRefetch: async (tx) => {
+        console.log(`[useElectricSync] Shape ${shapeKey} must refetch, cleaning up...`);
+        // Clear all existing data for this table before refetch
+        await tx.exec(`DELETE FROM "${table}"`);
+        // Dispatch event so components can handle the refetch
+        dispatchEvent(shapeKey, "mustRefetch");
+      },
+    });
+
+    // Update shared shape with the actual shape instance
+    sharedShape.shape = shape;
+    sharedShape.shapeStream = shape.stream;
+
+    // Subscribe to shape.stream for real-time events
+    // This replaces the separate ShapeStream we were creating before
+    const shapeUnsubscribe = shape.stream.subscribe(async (messages) => {
+      // Handle both single message and array of messages
+      const messageArray = Array.isArray(messages) ? messages : [messages];
+      
+      for (const message of messageArray) {
+        // Skip if message is not valid
+        if (!message || typeof message !== 'object') {
+          console.warn('[useElectricSync] Invalid message received:', message);
+          continue;
+        }
+        
+        // Handle control messages
+        if (message.headers?.control === 'must-refetch') {
+          console.log(`[useElectricSync] Received must-refetch control message for ${shapeKey}`);
+          continue;
+        }
+        
+        const operation = message.headers?.operation;
+        
+        switch (operation) {
+          case "insert": {
+            const data = message.value as Record<string, any>;
+            await dispatchEvent(shapeKey, 'insert', data);
+            break;
+          }
+          case "update": {
+            const data = message.value as Record<string, any>;
+            await dispatchEvent(shapeKey, 'update', data, data);
+            break;
+          }
+          case "delete": {
+            const id = (message.key as string) ||
+                       (message.value as any)?.id ||
+                       (message.value as any)?.[primaryKey[0]];
+            if (id) {
+              await dispatchEvent(shapeKey, 'delete', undefined, id);
+            }
+            break;
+          }
+        }
+      }
+    });
+
+    sharedShape.shapeUnsubscribe = shapeUnsubscribe;
+
+    return sharedShape;
+  } catch (error) {
+    // Cleanup on error
+    getSharedShapes().delete(shapeKey);
+    throw error;
+  }
 }
 
 /**
