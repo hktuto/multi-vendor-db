@@ -8,6 +8,13 @@
       "when": 1771330087562,
       "tag": "0000_flashy_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771335000000,
+      "tag": "0001_remove_fk_constraints",
+      "breakpoints": true
     }
   ]
 }

@@ -42,9 +42,7 @@ export const userAccounts = pgTable(
   "user_accounts",
   {
     id: uuid("id").primaryKey(), // Application-generated UUID
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull(), // No FK - references users.id
     provider: varchar("provider", { length: 50 }).notNull(), // 'password', 'google', 'github', 'microsoft', 'saml'
     providerAccountId: varchar("provider_account_id", {
       length: 255,
@@ -80,9 +78,7 @@ export const companies = pgTable("companies", {
   id: uuid("id").primaryKey(), // Application-generated UUID
   name: varchar("name", { length: 255 }).notNull(),
   slug: varchar("slug", { length: 255 }).notNull().unique(),
-  ownerId: uuid("owner_id")
-    .notNull()
-    .references(() => users.id),
+  ownerId: uuid("owner_id").notNull(), // No FK - references users.id
   plan: varchar("plan", { length: 24 })
     .notNull()
     .$type<"basic" | "pro" | "enterprise">()
@@ -108,35 +104,25 @@ export const companyMembers = pgTable(
   "company_members",
   {
     id: uuid("id").primaryKey(), // Application-generated UUID
-    companyId: uuid("company_id")
-      .notNull()
-      .references(() => companies.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").notNull(), // No FK - references companies.id
+    userId: uuid("user_id").notNull(), // No FK - references users.id
     role: varchar("role", { length: 20 }).notNull().$type<"admin" | "member">(),
     joinedAt: timestamp("joined_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    invitedBy: uuid("invited_by").references(() => users.id),
+    invitedBy: uuid("invited_by"), // No FK - references users.id
   },
   (table) => [
     unique("unique_company_member").on(table.companyId, table.userId),
-    // Note: Drizzle doesn't support DEFERRABLE in .references()
-    // Use manual SQL in migration or post-migration hook
   ],
 );
 
 export const userGroups = pgTable("user_groups", {
   id: uuid("id").primaryKey(), // Application-generated UUID
-  companyId: uuid("company_id")
-    .notNull()
-    .references(() => companies.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull(), // No FK - references companies.id
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  createdBy: uuid("created_by")
-    .notNull()
-    .references(() => users.id),
+  createdBy: uuid("created_by").notNull(), // No FK - references users.id
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -149,19 +135,11 @@ export const userGroupMembers = pgTable(
   "user_group_members",
   {
     id: uuid("id").primaryKey(), // Application-generated UUID
-    companyId: uuid("company_id")
-      .notNull()
-      .references(() => companies.id, { onDelete: "cascade" }), // Added for easy query & sync
-    groupId: uuid("group_id")
-      .notNull()
-      .references(() => userGroups.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").notNull(), // No FK - references companies.id
+    groupId: uuid("group_id").notNull(), // No FK - references user_groups.id
+    userId: uuid("user_id").notNull(), // No FK - references users.id
     role: varchar("role", { length: 20 }).notNull().$type<"admin" | "member">(),
-    addedBy: uuid("added_by")
-      .notNull()
-      .references(() => users.id),
+    addedBy: uuid("added_by").notNull(), // No FK - references users.id
     addedAt: timestamp("added_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -171,12 +149,8 @@ export const userGroupMembers = pgTable(
 
 export const inviteLinks = pgTable("invite_links", {
   id: uuid("id").primaryKey(), // Application-generated UUID
-  companyId: uuid("company_id")
-    .notNull()
-    .references(() => companies.id, { onDelete: "cascade" }),
-  createdBy: uuid("created_by")
-    .notNull()
-    .references(() => users.id),
+  companyId: uuid("company_id").notNull(), // No FK - references companies.id
+  createdBy: uuid("created_by").notNull(), // No FK - references users.id
   email: varchar("email", { length: 255 }), // NEW: One invite per email per company
   token: varchar("token", { length: 255 }).notNull().unique(),
   role: varchar("role", { length: 20 }).notNull().$type<"admin" | "member">(),
@@ -186,7 +160,7 @@ export const inviteLinks = pgTable("invite_links", {
     .defaultNow()
     .notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
-  usedBy: uuid("used_by").references(() => users.id),
+  usedBy: uuid("used_by"), // No FK - references users.id
   isActive: boolean("is_active").default(true).notNull(),
 });
 
@@ -196,17 +170,13 @@ export const inviteLinks = pgTable("invite_links", {
 
 export const spaces = pgTable("spaces", {
   id: uuid("id").primaryKey(),
-  companyId: uuid("company_id")
-    .notNull()
-    .references(() => companies.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull(), // No FK - references companies.id
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   icon: varchar("icon", { length: 50 }),
   color: varchar("color", { length: 7 }),
   settings: jsonb("settings").default({}).notNull(),
-  createdBy: uuid("created_by")
-    .notNull()
-    .references(() => users.id),
+  createdBy: uuid("created_by").notNull(), // No FK - references users.id
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -220,19 +190,15 @@ export const spaceMembers = pgTable(
   "space_members",
   {
     id: uuid("id").primaryKey(),
-    spaceId: uuid("space_id")
-      .notNull()
-      .references(() => spaces.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    spaceId: uuid("space_id").notNull(), // No FK - references spaces.id
+    userId: uuid("user_id").notNull(), // No FK - references users.id
     role: varchar("role", { length: 20 })
       .notNull()
       .$type<"admin" | "editor" | "viewer">(),
     joinedAt: timestamp("joined_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    invitedBy: uuid("invited_by").references(() => users.id),
+    invitedBy: uuid("invited_by"), // No FK - references users.id
   },
   (table) => [unique("unique_space_member").on(table.spaceId, table.userId)],
 );
@@ -240,10 +206,8 @@ export const spaceMembers = pgTable(
 // Unified items table - folder, table, view, dashboard all in one
 export const spaceItems = pgTable("space_items", {
   id: uuid("id").primaryKey(),
-  spaceId: uuid("space_id")
-    .notNull()
-    .references(() => spaces.id, { onDelete: "cascade" }),
-  parentId: uuid("parent_id").references(() => spaceItems.id),
+  spaceId: uuid("space_id").notNull(), // No FK - references spaces.id
+  parentId: uuid("parent_id"), // No FK - references space_items.id (self-reference)
   type: varchar("type", { length: 50 })
     .notNull()
     .$type<"folder" | "table" | "view" | "dashboard">(),
@@ -253,9 +217,7 @@ export const spaceItems = pgTable("space_items", {
   color: varchar("color", { length: 7 }),
   orderIndex: integer("order_index").default(0).notNull(),
   config: jsonb("config").default({}).notNull(),
-  createdBy: uuid("created_by")
-    .notNull()
-    .references(() => users.id),
+  createdBy: uuid("created_by").notNull(), // No FK - references users.id
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -270,12 +232,8 @@ export const spaceItemPermissions = pgTable(
   "space_item_permissions",
   {
     id: uuid("id").primaryKey(),
-    itemId: uuid("item_id")
-      .notNull()
-      .references(() => spaceItems.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id").notNull(), // No FK - references space_items.id
+    userId: uuid("user_id").notNull(), // No FK - references users.id
     permission: varchar("permission", { length: 20 })
       .notNull()
       .$type<"read" | "readwrite" | "manage">(),
