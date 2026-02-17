@@ -48,30 +48,10 @@ watch(() => rootItems.value, (newItems) => {
   }
 }, { immediate: true, deep: true })
 
-// Watch for temp items that need to enter edit mode after render
-watch(() => rootItems.value, async () => {
-  if (tempItemIdToEdit.value) {
-    // Wait for DOM update
-    await nextTick()
-    // Small delay to ensure component is fully mounted
-    setTimeout(() => {
-      const nodeRef = treeNodeRefs.value[tempItemIdToEdit.value!]
-      if (nodeRef) {
-        console.log('[SpaceItemTree] Triggering edit mode for:', tempItemIdToEdit.value)
-        nodeRef.startEdit()
-      }
-      tempItemIdToEdit.value = null
-    }, 100)
-  }
-}, { flush: 'post' })
-
 // Load items on mount
 onMounted(async () => {
-  // Load from local DB
   await spaceItems.loadItems(props.spaceId)
-  // Subscribe to Electric changes
   await spaceItems.subscribeToItems(props.spaceId)
-  // Expand all folders by default
   expandAllFolders()
 })
 
@@ -97,7 +77,6 @@ function toggleFolder(folderId: string) {
 function handleSelect(item: SyncedSpaceItem) {
   selectedItemId.value = item.id
   emit('select', item)
-  // For folders, also expand them when selected
   if (item.type === 'folder') {
     expandedFolders.value.add(item.id)
   }
@@ -105,7 +84,6 @@ function handleSelect(item: SyncedSpaceItem) {
 
 // ===== CREATE / EDIT =====
 function openCreateModal(type: 'folder' | 'table' | 'view' | 'dashboard', parentId?: string | null) {
-  console.log('[SpaceItemTree] openCreateModal called:', { type, parentId })
   formMode.value = 'create'
   formType.value = type
   formParentId.value = parentId || null
@@ -115,30 +93,24 @@ function openCreateModal(type: 'folder' | 'table' | 'view' | 'dashboard', parent
 
 // Quick create folder - creates immediately and enters edit mode
 async function quickCreateFolder(parentId?: string | null) {
-  console.log('[SpaceItemTree] quickCreateFolder called:', { parentId })
   try {
-    // Create folder with default name
     const newItem = await spaceItems.createItem(props.spaceId, {
       type: 'folder',
       name: 'New Folder',
       parent_id: parentId
     })
     
-    console.log('[SpaceItemTree] Quick folder created:', newItem)
-    
-    // Expand parent folder
     if (parentId) {
       expandedFolders.value.add(parentId)
     }
     
     // Track this item to enter edit mode after render
-    tempItemIdToEdit.value = newItem.id
-    
-    // Highlight the new item
     justCreatedItemId.value = newItem.id
     highlightedItems.value.add(newItem.id)
+    
     setTimeout(() => {
       highlightedItems.value.delete(newItem.id)
+      justCreatedItemId.value = null
     }, 1500)
     
     useToast().add({
@@ -147,7 +119,6 @@ async function quickCreateFolder(parentId?: string | null) {
       color: 'success'
     })
   } catch (error: any) {
-    console.error('[SpaceItemTree] Failed to create folder:', error)
     useToast().add({
       title: 'Error',
       description: error.message || 'Failed to create folder',
@@ -158,24 +129,19 @@ async function quickCreateFolder(parentId?: string | null) {
 
 // Handle rename from inline editing
 async function handleRename(itemId: string, newName: string) {
-  console.log('[SpaceItemTree] handleRename:', { itemId, newName })
   try {
     if (!newName.trim()) {
-      // If empty name, reload to restore original
       await spaceItems.loadItems(props.spaceId)
       return
     }
     
     await spaceItems.updateItem(props.spaceId, itemId, { name: newName })
-    console.log('[SpaceItemTree] Rename successful')
   } catch (error: any) {
-    console.error('[SpaceItemTree] Rename failed:', error)
     useToast().add({
       title: 'Error',
       description: error.message || 'Failed to rename',
       color: 'error'
     })
-    // Reload to restore original name
     await spaceItems.loadItems(props.spaceId)
   }
 }
@@ -195,19 +161,14 @@ async function handleFormSubmit(data: {
   color?: string
   config?: Record<string, any>
 }) {
-  console.log('[SpaceItemTree] handleFormSubmit:', { mode: formMode.value, type: formType.value, parentId: formParentId.value, data })
   try {
     if (formMode.value === 'create') {
-      // Optimistic create - local state updates immediately
       const newItem = await spaceItems.createItem(props.spaceId, {
         type: formType.value,
         ...data,
         parent_id: formParentId.value
       })
       
-      console.log('[SpaceItemTree] Created item:', newItem)
-      
-      // Highlight new item
       justCreatedItemId.value = newItem.id
       highlightedItems.value.add(newItem.id)
       setTimeout(() => {
@@ -223,7 +184,6 @@ async function handleFormSubmit(data: {
         color: 'success'
       })
     } else if (formMode.value === 'edit' && formItem.value) {
-      // Optimistic update
       await spaceItems.updateItem(props.spaceId, formItem.value.id, data)
       
       useToast().add({
@@ -251,9 +211,7 @@ async function confirmDelete() {
   if (!deletingItem.value) return
   
   try {
-    // Optimistic delete - removes from UI immediately
     await spaceItems.deleteItem(props.spaceId, deletingItem.value.id)
-    
     useToast().add({ title: 'Success', description: 'Item deleted', color: 'success' })
   } catch (error: any) {
     useToast().add({ title: 'Error', description: error.message || 'Failed to delete', color: 'error' })
@@ -264,86 +222,67 @@ async function confirmDelete() {
 }
 
 // ===== DRAG AND DROP =====
-// Track items being dragged between lists
-const draggedItemInfo = ref<{ id: string; fromParentId: string | null } | null>(null)
-
-// Refs to tree node components for triggering edit mode
-const treeNodeRefs = ref<Record<string, InstanceType<typeof SpaceItemTreeNode>>>({})
-
-// Track temp items that need to enter edit mode after creation
-const tempItemIdToEdit = ref<string | null>(null)
-
-function onDragStart(evt: any) {
+function onDragStart() {
   isDragging.value = true
-  console.log('[SpaceItemTree] Drag started')
 }
 
 async function onDragEnd(evt: any) {
-  const { newIndex, oldIndex, to, from, item: draggedElement } = evt
+  const { newIndex, oldIndex, to, from } = evt
   
-  console.log('[SpaceItemTree] Drag ended:', { newIndex, oldIndex, to, from })
-  
-  // Reset dragging flag after a short delay to allow watchers to update
   setTimeout(() => {
     isDragging.value = false
   }, 100)
   
-  // If moved within same list and same position, do nothing
+  // Same position, no change
   if (to === from && newIndex === oldIndex) {
-    console.log('[SpaceItemTree] Same position, no change needed')
     return
   }
   
-  const draggedId = draggedElement.__draggable_context?.element?.id
-  if (!draggedId) {
-    console.warn('[SpaceItemTree] No draggedId found')
-    return
-  }
+  const draggedId = evt.item?.__draggable_context?.element?.id
+  if (!draggedId) return
   
-  // Determine new parent (null for root level)
-  const newParentId = null
-  
-  console.log('[SpaceItemTree] Moving item:', draggedId, 'to root at index:', newIndex)
+  // Log drag operation to backend
+  console.log('[DRAG] Moving item to root:', { draggedId, newIndex })
   
   try {
-    // Optimistic reorder - updates UI immediately
-    await spaceItems.handleDragEnd(props.spaceId, draggedId, newParentId, newIndex)
-    console.log('[SpaceItemTree] Drag operation successful')
+    await spaceItems.handleDragEnd(props.spaceId, draggedId, null, newIndex)
+    console.log('[DRAG] Success: Item moved to root')
   } catch (error: any) {
-    console.error('[SpaceItemTree] Drag operation failed:', error)
+    console.error('[DRAG] Failed:', error)
     useToast().add({ title: 'Error', description: error.message || 'Failed to reorder', color: 'error' })
-    // Revert by reloading
     await spaceItems.loadItems(props.spaceId)
   }
 }
 
 // Handle item dragged INTO root from elsewhere
-function onDragAdd(evt: any) {
+async function onDragAdd(evt: any) {
   const draggedId = evt.item?.__draggable_context?.element?.id || evt.item?.id
-  if (!draggedId) {
-    console.warn('[SpaceItemTree] onDragAdd: no draggedId found')
-    return
-  }
+  if (!draggedId) return
   
   const newIndex = evt.newIndex
   
-  console.log('[SpaceItemTree] Item dragged INTO root:', draggedId, 'at index:', newIndex)
+  console.log('[DRAG] Item dragged INTO root:', { draggedId, newIndex })
   
-  // Immediately update the parent_id for the dragged item
-  spaceItems.handleDragEnd(props.spaceId, draggedId, null, newIndex).catch((error: any) => {
-    console.error('[SpaceItemTree] Failed to move item to root:', error)
+  try {
+    await spaceItems.handleDragEnd(props.spaceId, draggedId, null, newIndex)
+    console.log('[DRAG] Success: Item added to root')
+  } catch (error: any) {
+    console.error('[DRAG] Failed to move item to root:', error)
     useToast().add({ title: 'Error', description: error.message || 'Failed to move item', color: 'error' })
-  })
+  }
 }
 
 // Handle child reorder from nested folders
 async function onChildReorder(updates: { id: string; order_index: number; parent_id: string | null }[]) {
-  console.log('[SpaceItemTree] onChildReorder called with updates:', updates)
+  if (updates.length === 0) return
+  
+  console.log('[DRAG] Reordering items:', updates.map(u => ({ id: u.id, parent_id: u.parent_id, order_index: u.order_index })))
+  
   try {
     await spaceItems.reorderItems(props.spaceId, updates)
-    console.log('[SpaceItemTree] Reorder successful')
+    console.log('[DRAG] Success: Items reordered')
   } catch (error: any) {
-    console.error('[SpaceItemTree] Reorder failed:', error)
+    console.error('[DRAG] Reorder failed:', error)
     useToast().add({ title: 'Error', description: error.message || 'Failed to reorder', color: 'error' })
   }
 }
@@ -417,7 +356,6 @@ defineExpose({
       >
         <template #item="{ element: item }">
           <SpaceItemTreeNode
-            ref="(el) => { if (el) treeNodeRefs[item.id] = el }"
             :item="{ ...item, children: getItemChildren(item.id) }"
             :space-id="spaceId"
             :expanded-folders="expandedFolders"

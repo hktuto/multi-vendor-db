@@ -85,7 +85,10 @@ function getSharedShapes(): Map<string, SharedShapeInstance> {
     return new Map();
   }
   if (!(window as any).__electricSharedShapes) {
-    (window as any).__electricSharedShapes = new Map<string, SharedShapeInstance>();
+    (window as any).__electricSharedShapes = new Map<
+      string,
+      SharedShapeInstance
+    >();
   }
   return (window as any).__electricSharedShapes;
 }
@@ -98,7 +101,10 @@ function getInflightPromises(): Map<string, Promise<SharedShapeInstance>> {
     return new Map();
   }
   if (!(window as any).__electricInflightPromises) {
-    (window as any).__electricInflightPromises = new Map<string, Promise<SharedShapeInstance>>();
+    (window as any).__electricInflightPromises = new Map<
+      string,
+      Promise<SharedShapeInstance>
+    >();
   }
   return (window as any).__electricInflightPromises;
 }
@@ -117,7 +123,13 @@ function generateCallbackId(): string {
  */
 async function dispatchEvent<T extends Record<string, any>>(
   shapeKey: string,
-  eventType: "insert" | "update" | "delete" | "upToDate" | "error" | "mustRefetch",
+  eventType:
+    | "insert"
+    | "update"
+    | "delete"
+    | "upToDate"
+    | "error"
+    | "mustRefetch",
   data?: T,
   extra?: any,
 ) {
@@ -239,8 +251,7 @@ async function createSharedShape(
       },
       table,
       primaryKey,
-      shapeKey,
-      initialInsertMethod: 'csv', // Use CSV for faster initial sync
+      shapeKey, // Use CSV for faster initial sync
       onInitialSync: () => {
         const sharedShape = getSharedShapes().get(shapeKey);
         if (sharedShape) {
@@ -260,7 +271,9 @@ async function createSharedShape(
         dispatchEvent(shapeKey, "error", undefined, err);
       },
       onMustRefetch: async (tx) => {
-        console.log(`[useElectricSync] Shape ${shapeKey} must refetch, cleaning up...`);
+        console.log(
+          `[useElectricSync] Shape ${shapeKey} must refetch, cleaning up...`,
+        );
         // Clear all existing data for this table before refetch
         await tx.exec(`DELETE FROM "${table}"`);
         // Dispatch event so components can handle the refetch
@@ -276,40 +289,44 @@ async function createSharedShape(
     // This replaces the separate ShapeStream we were creating before
     const shapeUnsubscribe = shape.stream.subscribe(async (messages) => {
       // Handle both single message and array of messages
+      console.log("stream message", shapeKey, messages);
       const messageArray = Array.isArray(messages) ? messages : [messages];
-      
+
       for (const message of messageArray) {
         // Skip if message is not valid
-        if (!message || typeof message !== 'object') {
-          console.warn('[useElectricSync] Invalid message received:', message);
+        if (!message || typeof message !== "object") {
+          console.warn("[useElectricSync] Invalid message received:", message);
           continue;
         }
-        
+
         // Handle control messages
-        if (message.headers?.control === 'must-refetch') {
-          console.log(`[useElectricSync] Received must-refetch control message for ${shapeKey}`);
+        if (message.headers?.control === "must-refetch") {
+          console.log(
+            `[useElectricSync] Received must-refetch control message for ${shapeKey}`,
+          );
           continue;
         }
-        
+
         const operation = message.headers?.operation;
-        
+
         switch (operation) {
           case "insert": {
             const data = message.value as Record<string, any>;
-            await dispatchEvent(shapeKey, 'insert', data);
+            await dispatchEvent(shapeKey, "insert", data);
             break;
           }
           case "update": {
             const data = message.value as Record<string, any>;
-            await dispatchEvent(shapeKey, 'update', data, data);
+            await dispatchEvent(shapeKey, "update", data, data);
             break;
           }
           case "delete": {
-            const id = (message.key as string) ||
-                       (message.value as any)?.id ||
-                       (message.value as any)?.[primaryKey[0]];
+            const id =
+              (message.key as string) ||
+              (message.value as any)?.id ||
+              (message.value as any)?.[primaryKey[0]];
             if (id) {
-              await dispatchEvent(shapeKey, 'delete', undefined, id);
+              await dispatchEvent(shapeKey, "delete", undefined, id);
             }
             break;
           }
@@ -321,6 +338,7 @@ async function createSharedShape(
 
     return sharedShape;
   } catch (error) {
+    console.log("create Shape error");
     // Cleanup on error
     getSharedShapes().delete(shapeKey);
     throw error;
@@ -396,12 +414,7 @@ export function useElectricSync() {
   async function subscribe<T extends Record<string, any> = Record<string, any>>(
     config: ShapeConfig,
   ): Promise<() => void> {
-    const {
-      table,
-      shapeUrl,
-      primaryKey = ["id"],
-      callbacks = {},
-    } = config;
+    const { table, shapeUrl, primaryKey = ["id"], callbacks = {} } = config;
 
     // Use table as shapeKey - one shape per table
     const shapeKey = table;

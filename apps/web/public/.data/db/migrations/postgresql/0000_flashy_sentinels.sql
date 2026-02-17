@@ -59,8 +59,7 @@ CREATE TABLE "space_items" (
 	"created_by" uuid NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"deleted_at" timestamp with time zone,
-	CONSTRAINT "unique_space_item_name" UNIQUE("space_id","parent_id","name")
+	"deleted_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "space_members" (

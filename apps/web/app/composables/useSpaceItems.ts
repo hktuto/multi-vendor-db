@@ -404,6 +404,9 @@ const _useSpaceItems = () => {
             // Only handle items for this space
             if (item.space_id !== spaceId) return;
 
+            // Log Electric sync event
+            console.log('[ELECTRIC] onInsert:', { id: item.id, name: item.name, type: item.type });
+
             // Add to local state if not exists
             const items = itemsBySpace.value[spaceId] || [];
             if (!items.find((i) => i.id === item.id)) {
@@ -416,12 +419,9 @@ const _useSpaceItems = () => {
               (op) =>
                 (op.type === "update" || op.type === "reorder") &&
                 (op.id === item.id || (op.data && op.data.some?.((u: any) => u.id === item.id))) &&
-                op.timestamp > Date.now() - 15000, // Increased to 15s
+                op.timestamp > Date.now() - 15000,
             );
-            if (isPending) {
-              console.log('[useSpaceItems] Skipping onUpdate for pending item:', item.id);
-              return;
-            }
+            if (isPending) return;
 
             // Only handle items for this space
             if (item.space_id !== spaceId) return;
@@ -437,20 +437,23 @@ const _useSpaceItems = () => {
                 const localUpdatedAt = new Date(localItem.updated_at).getTime();
                 const remoteUpdatedAt = new Date(item.updated_at).getTime();
                 
-                if (localUpdatedAt > remoteUpdatedAt) {
-                  console.log('[useSpaceItems] Local item is newer, skipping update:', item.id);
-                  return;
-                }
+                if (localUpdatedAt > remoteUpdatedAt) return;
                 
                 // Compare with local - only update if different
                 const hasChanges =
                   localItem.name !== item.name ||
                   localItem.parent_id !== item.parent_id ||
                   localItem.order_index !== item.order_index ||
+                  localItem.description !== item.description ||
                   JSON.stringify(localItem.config) !== JSON.stringify(item.config);
 
                 if (hasChanges) {
-                  console.log('[useSpaceItems] Applying update from Electric:', item.id, { parent_id: item.parent_id, order_index: item.order_index });
+                  console.log('[ELECTRIC] onUpdate:', { 
+                    id: item.id, 
+                    name: item.name,
+                    parent_id: item.parent_id, 
+                    order_index: item.order_index 
+                  });
                   itemsBySpace.value[spaceId][index] = item;
                 }
               }
@@ -463,13 +466,15 @@ const _useSpaceItems = () => {
             );
             if (isPending) return;
 
+            console.log('[ELECTRIC] onDelete:', { id });
+
             // Remove from all spaces (we don't know which space it belonged to)
             Object.keys(itemsBySpace.value).forEach((sid) => {
               deleteItemLocal(sid, id as string);
             });
           },
           onError: (error) => {
-            console.error("[useSpaceItems] Sync error:", error);
+            console.error("[ELECTRIC] Sync error:", error);
           },
         },
       });

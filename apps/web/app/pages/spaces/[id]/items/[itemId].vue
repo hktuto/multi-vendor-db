@@ -95,7 +95,6 @@ function navigateToChild(childItem: SyncedSpaceItem) {
 
 // Navigate to settings
 function openSettings() {
-  // Could open a modal or navigate to settings page
   toast.add({
     title: 'Settings',
     description: 'Folder settings coming soon',
@@ -108,8 +107,6 @@ onMounted(async () => {
   const roleInfo = await getMySpaceRole(spaceId)
   myRole.value = roleInfo
   members.value = await queryMembers(spaceId)
-  
-  // Subscribe to items sync
   await spaceItems.subscribeToItems(spaceId)
 })
 
@@ -156,6 +153,7 @@ watchEffect(() => {
             input-class="text-2xl"
             @save="handleRename"
           />
+          
           <!-- Settings Button -->
           <UButton
             v-if="canEdit"

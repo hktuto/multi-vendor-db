@@ -185,6 +185,80 @@ async function runMigrations(pg: PGliteWorker): Promise<void> {
   }
 
   console.log('[usePgWorker] Migrations complete');
+  
+  // Post-migration: Set all foreign key constraints to DEFERRED for Electric SQL sync
+  await setForeignKeysDeferred(worker);
+}
+
+/**
+ * Set all foreign key constraints to DEFERRABLE INITIALLY DEFERRED
+ * This allows Electric SQL to sync child tables before parent tables arrive
+ */
+async function setForeignKeysDeferred(pg: PGliteWorker): Promise<void> {
+  try {
+    // Check if already set
+    const checkResult = await pg.query<{ count: number }>(`
+      SELECT COUNT(*) as count 
+      FROM information_schema.table_constraints 
+      WHERE constraint_type = 'FOREIGN KEY' 
+      AND table_schema = 'public'
+    `);
+    
+    const fkCount = parseInt(checkResult.rows[0]?.count || '0');
+    if (fkCount === 0) {
+      console.log('[usePgWorker] No FK constraints found');
+      return;
+    }
+    
+    console.log(`[usePgWorker] Setting ${fkCount} FK constraints to DEFERRED...`);
+    
+    // Get constraint names that need updating
+    const result = await pg.query<{ conname: string; conrelid: string }>(`
+      SELECT 
+        conname,
+        relname as conrelid
+      FROM pg_constraint
+      JOIN pg_class ON pg_constraint.conrelid = pg_class.oid
+      WHERE contype = 'f'
+      AND condeferrable = false
+    `);
+    
+    if (result.rows.length === 0) {
+      console.log('[usePgWorker] All FK constraints already deferrable');
+      return;
+    }
+    
+    console.log(`[usePgWorker] Updating ${result.rows.length} FK constraints...`);
+    
+    // Update each constraint
+    for (const row of result.rows) {
+      try {
+        // Get constraint definition
+        const defResult = await pg.query<{ pg_get_constraintdef: string }>(`
+          SELECT pg_get_constraintdef(oid) as pg_get_constraintdef
+          FROM pg_constraint
+          WHERE conname = $1
+        `, [row.conname]);
+        
+        const fkDef = defResult.rows[0]?.pg_get_constraintdef;
+        if (!fkDef) continue;
+        
+        // Extract the actual FK definition (remove "FOREIGN KEY")
+        const cleanDef = fkDef.replace(/^FOREIGN KEY /, '');
+        
+        // Drop and recreate as deferrable
+        await pg.exec(`ALTER TABLE "${row.conrelid}" DROP CONSTRAINT IF EXISTS "${row.conname}"`);
+        await pg.exec(`ALTER TABLE "${row.conrelid}" ADD CONSTRAINT "${row.conname}" FOREIGN KEY ${cleanDef} DEFERRABLE INITIALLY DEFERRED`);
+        
+      } catch (fkError) {
+        console.warn(`[usePgWorker] Failed to update FK ${row.conname}:`, fkError);
+      }
+    }
+    
+    console.log('[usePgWorker] FK constraints updated to DEFERRED');
+  } catch (error) {
+    console.error('[usePgWorker] Failed to set FK constraints:', error);
+  }
 }
 
 /**
@@ -220,6 +294,12 @@ async function createPgWorker(): Promise<PGliteWorker> {
   console.log('[usePgWorker] PGlite Worker ready');
 
   await runMigrations(worker);
+  
+  // Set foreign key constraints to DEFERRED for Electric SQL sync
+  // This allows child tables to sync before parent tables
+  await worker.exec('SET CONSTRAINTS ALL DEFERRED');
+  console.log('[usePgWorker] Foreign key constraints set to DEFERRED');
+  
   return worker;
 }
 

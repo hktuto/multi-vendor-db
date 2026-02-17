@@ -24,20 +24,6 @@ const emit = defineEmits<{
   reorder: [updates: { id: string; order_index: number; parent_id: string | null }[]]
 }>()
 
-// Inline editing state
-const inlineEditRef = ref<InstanceType<typeof InlineEditableText> | null>(null)
-const isEditing = computed(() => inlineEditRef.value?.isEditing ?? false)
-
-// Expose method to trigger edit mode
-function startEdit() {
-  inlineEditRef.value?.startEdit()
-}
-
-defineExpose({
-  startEdit,
-  isEditing
-})
-
 const level = computed(() => props.level || 0)
 const isExpanded = computed(() => props.item.type === 'folder' && props.expandedFolders.has(props.item.id))
 const isSelected = computed(() => props.selectedId === props.item.id)
@@ -66,7 +52,6 @@ function getIcon(type: string): string {
   return icons[type] || 'i-lucide-file'
 }
 
-// Get icon color
 function getIconColor(type: string): string {
   const colors: Record<string, string> = {
     folder: 'text-amber-500',
@@ -91,7 +76,6 @@ function selectItem(event?: MouseEvent) {
 
 // ===== ACTIONS MENU =====
 const actionMenuItems = computed<DropdownMenuItem[][]>(() => {
-  console.log('[SpaceItemTreeNode] Building actionMenuItems for item:', props.item.id, 'type:', props.item.type)
   const items: DropdownMenuItem[][] = []
   
   // Section 1: Create (for folders)
@@ -100,34 +84,22 @@ const actionMenuItems = computed<DropdownMenuItem[][]>(() => {
       { 
         label: 'Add Folder', 
         icon: 'i-lucide-folder-plus', 
-        onSelect: () => {
-          console.log('[SpaceItemTreeNode] Add Folder clicked, emitting create with parentId:', props.item.id)
-          emit('create', 'folder', props.item.id)
-        } 
+        onSelect: () => emit('create', 'folder', props.item.id)
       },
       { 
         label: 'Add Table', 
         icon: 'i-lucide-table', 
-        onSelect: () => {
-          console.log('[SpaceItemTreeNode] Add Table clicked, emitting create with parentId:', props.item.id)
-          emit('create', 'table', props.item.id)
-        } 
+        onSelect: () => emit('create', 'table', props.item.id)
       },
       { 
         label: 'Add View', 
         icon: 'i-lucide-layout-dashboard', 
-        onSelect: () => {
-          console.log('[SpaceItemTreeNode] Add View clicked, emitting create with parentId:', props.item.id)
-          emit('create', 'view', props.item.id)
-        } 
+        onSelect: () => emit('create', 'view', props.item.id)
       },
       { 
         label: 'Add Dashboard', 
         icon: 'i-lucide-bar-chart', 
-        onSelect: () => {
-          console.log('[SpaceItemTreeNode] Add Dashboard clicked, emitting create with parentId:', props.item.id)
-          emit('create', 'dashboard', props.item.id)
-        } 
+        onSelect: () => emit('create', 'dashboard', props.item.id)
       }
     ])
   }
@@ -137,10 +109,7 @@ const actionMenuItems = computed<DropdownMenuItem[][]>(() => {
     { 
       label: 'Edit Name', 
       icon: 'i-lucide-edit-2', 
-      onSelect: () => {
-        console.log('[SpaceItemTreeNode] Edit Name clicked, starting inline edit')
-        startEdit()
-      } 
+      onSelect: () => startEdit()
     },
     { label: 'Settings', icon: 'i-lucide-settings', onSelect: () => emit('edit', props.item) }
   ]
@@ -166,70 +135,67 @@ const actionMenuItems = computed<DropdownMenuItem[][]>(() => {
 
 // Add sub-item menu (for folder hover)
 const addSubItemMenu = computed<DropdownMenuItem[][]>(() => {
-  console.log('[SpaceItemTreeNode] Building addSubItemMenu for item:', props.item.id, 'type:', props.item.type)
   return [
     [{ 
       label: 'New Folder', 
       icon: 'i-lucide-folder', 
-      onSelect: () => {
-        console.log('[SpaceItemTreeNode] New Folder clicked, emitting create with parentId:', props.item.id)
-        emit('create', 'folder', props.item.id)
-      } 
+      onSelect: () => emit('create', 'folder', props.item.id)
     }],
     [
       { 
         label: 'New Table', 
         icon: 'i-lucide-table', 
-        onSelect: () => {
-          console.log('[SpaceItemTreeNode] New Table clicked, emitting create with parentId:', props.item.id)
-          emit('create', 'table', props.item.id)
-        } 
+        onSelect: () => emit('create', 'table', props.item.id)
       },
       { 
         label: 'New View', 
         icon: 'i-lucide-layout-dashboard', 
-        onSelect: () => {
-          console.log('[SpaceItemTreeNode] New View clicked, emitting create with parentId:', props.item.id)
-          emit('create', 'view', props.item.id)
-        } 
+        onSelect: () => emit('create', 'view', props.item.id)
       },
       { 
         label: 'New Dashboard', 
         icon: 'i-lucide-bar-chart', 
-        onSelect: () => {
-          console.log('[SpaceItemTreeNode] New Dashboard clicked, emitting create with parentId:', props.item.id)
-          emit('create', 'dashboard', props.item.id)
-        } 
+        onSelect: () => emit('create', 'dashboard', props.item.id)
       }
     ]
   ]
 })
 
+// Inline editing
+const inlineEditRef = ref<InstanceType<typeof InlineEditableText> | null>(null)
+
+function startEdit() {
+  inlineEditRef.value?.startEdit()
+}
+
+defineExpose({
+  startEdit
+})
+
 // ===== DRAG AND DROP =====
+function onDragStart() {
+  isDragging.value = true
+}
+
 // Handle drag within this folder (reordering only)
 async function onChildDragEnd(evt: any) {
   const { newIndex, oldIndex, to, from } = evt
   
-  console.log('[SpaceItemTreeNode] Child drag ended:', { newIndex, oldIndex, to, from, folderId: props.item.id })
-  
-  // Reset dragging flag
   isDragging.value = false
   
-  // Only handle reordering within the same list
-  // Cross-list moves are handled by @add and @remove
+  // Cross-list move is handled by @add and @remove
   if (to !== from) {
-    console.log('[SpaceItemTreeNode] Cross-list move, skipping onChildDragEnd')
     return
   }
+  
+  // Same position, no change
   if (newIndex === oldIndex) {
-    console.log('[SpaceItemTreeNode] Same position, no change')
     return
   }
   
   // Build updates for reordering within this folder
   const updates: { id: string; order_index: number; parent_id: string | null }[] = []
   
-  // Update all children's order
   childrenForDrag.value.forEach((child, idx) => {
     updates.push({
       id: child.id,
@@ -238,28 +204,20 @@ async function onChildDragEnd(evt: any) {
     })
   })
   
-  console.log('[SpaceItemTreeNode] Emitting reorder updates for same-folder move:', updates)
   if (updates.length > 0) {
+    console.log('[DRAG] Reordering within folder:', props.item.id, updates.map(u => ({ id: u.id, order: u.order_index })))
     emit('reorder', updates)
   }
 }
 
-function onDragStart(evt: any) {
-  isDragging.value = true
-  console.log('[SpaceItemTreeNode] Drag started in folder:', props.item.id)
-}
-
 // Handle item dragged INTO this folder (from outside)
-function onDragAdd(evt: any) {
+async function onDragAdd(evt: any) {
   const draggedId = evt.item?.__draggable_context?.element?.id || evt.item?.id
-  if (!draggedId) {
-    console.warn('[SpaceItemTreeNode] onDragAdd: no draggedId found', evt)
-    return
-  }
+  if (!draggedId) return
   
   const newIndex = evt.newIndex ?? childrenForDrag.value.length
   
-  console.log('[SpaceItemTreeNode] Item dragged INTO folder:', props.item.id, 'item:', draggedId, 'at index:', newIndex)
+  console.log('[DRAG] Item dragged INTO folder:', { folderId: props.item.id, draggedId, newIndex })
   
   // Build updates: move dragged item to this folder + reorder all children
   const updates: { id: string; order_index: number; parent_id: string | null }[] = []
@@ -283,19 +241,34 @@ function onDragAdd(evt: any) {
     }
   })
   
-  console.log('[SpaceItemTreeNode] Emitting reorder updates:', updates)
+  console.log('[DRAG] Emitting move to folder:', updates.map(u => ({ id: u.id, parent: u.parent_id, order: u.order_index })))
   emit('reorder', updates)
 }
 
-// Handle item dragged OUT of this folder - DO NOT emit updates here
-// The target folder's onDragAdd will handle the move
+// Handle item dragged OUT of this folder
 function onDragRemove(evt: any) {
   const draggedId = evt.item?.__draggable_context?.element?.id || evt.item?.id
   if (!draggedId) return
   
-  console.log('[SpaceItemTreeNode] Item dragged OUT of folder:', props.item.id, 'item:', draggedId)
-  // Only reorder remaining children in this folder
-  // Note: The actual move is handled by onDragAdd in the target folder
+  console.log('[DRAG] Item dragged OUT of folder:', { folderId: props.item.id, draggedId })
+  
+  // Reorder remaining children
+  const updates: { id: string; order_index: number; parent_id: string | null }[] = []
+  
+  childrenForDrag.value
+    .filter(child => child.id !== draggedId)
+    .forEach((child, idx) => {
+      updates.push({
+        id: child.id,
+        order_index: idx,
+        parent_id: props.item.id
+      })
+    })
+  
+  if (updates.length > 0) {
+    console.log('[DRAG] Reordering remaining children:', updates.map(u => ({ id: u.id, order: u.order_index })))
+    emit('reorder', updates)
+  }
 }
 </script>
 
@@ -326,14 +299,13 @@ function onDragRemove(evt: any) {
       </button>
       <span v-else class="w-5" />
 
-      <!-- Item Content (Click to select/open) -->
+      <!-- Item Content -->
       <div class="item-content flex-1 min-w-0" @click="selectItem">
         <UIcon
           :name="getIcon(item.type)"
           class="w-4 h-4 flex-shrink-0"
           :class="getIconColor(item.type)"
         />
-        <!-- Inline Editable Name -->
         <InlineEditableText
           ref="inlineEditRef"
           v-model="item.name"
@@ -363,9 +335,7 @@ function onDragRemove(evt: any) {
         </UDropdownMenu>
 
         <!-- More Actions -->
-        <UDropdownMenu
-          :items="actionMenuItems"
-        >
+        <UDropdownMenu :items="actionMenuItems">
           <UButton
             color="neutral"
             variant="ghost"
@@ -382,7 +352,6 @@ function onDragRemove(evt: any) {
     <div
       v-if="item.type === 'folder' && isExpanded"
       class="folder-children"
-      :class="{ 'min-h-[20px]': childrenForDrag.length === 0 }"
     >
       <draggable
         v-model="childrenForDrag"
@@ -405,22 +374,24 @@ function onDragRemove(evt: any) {
             :highlighted-ids="highlightedIds"
             :just-created-id="justCreatedId"
             :level="level + 1"
-            @toggle="$emit('toggle', $event)"
-            @select="$emit('select', $event)"
+            @toggle="(id) => $emit('toggle', id)"
+            @select="(item, e) => $emit('select', item, e)"
             @create="(type, parentId) => $emit('create', type, parentId)"
-            @edit="$emit('edit', $event)"
-            @delete="$emit('delete', $event)"
-            @reorder="$emit('reorder', $event)"
+            @edit="(item) => $emit('edit', item)"
+            @rename="(id, name) => $emit('rename', id, name)"
+            @delete="(item) => $emit('delete', item)"
+            @reorder="(updates) => $emit('reorder', updates)"
           />
         </template>
-        
-        <!-- Empty slot for folder drop target -->
-        <template #footer>
-          <div v-if="childrenForDrag.length === 0" class="py-2 px-4 text-xs text-dimmed text-center">
-            Drop items here
-          </div>
-        </template>
       </draggable>
+      
+      <!-- Empty State for Drop Target -->
+      <div 
+        v-if="childrenForDrag.length === 0" 
+        class="py-4 px-4 text-xs text-dimmed text-center border-2 border-dashed border-gray-200 dark:border-gray-700 rounded m-2"
+      >
+        Drop items here
+      </div>
     </div>
   </div>
 </template>
@@ -474,12 +445,8 @@ function onDragRemove(evt: any) {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
   border-radius: 4px;
-  color: var(--color-gray-500);
-  transition: all 0.15s;
+  transition: background 0.15s;
 }
 
 .folder-toggle:hover {
@@ -495,10 +462,11 @@ function onDragRemove(evt: any) {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1;
 }
 
 .item-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -506,36 +474,20 @@ function onDragRemove(evt: any) {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
 }
 
 .folder-children {
   position: relative;
-  min-height: 10px;
-}
-
-.folder-children::before {
-  content: '';
-  position: absolute;
-  left: 16px;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--color-gray-200);
-}
-
-.dark .folder-children::before {
-  background: var(--color-gray-700);
 }
 
 .draggable-container {
-  min-height: 10px;
+  min-height: 20px;
 }
 
-/* Dragging styles */
 .ghost-item {
   opacity: 0.5;
   background: var(--color-primary-100);
+  border: 2px dashed var(--color-primary-300);
 }
 
 .dragging-item {
@@ -544,20 +496,28 @@ function onDragRemove(evt: any) {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Empty drop target */
-.min-h-\[20px\] {
-  min-height: 20px;
-}
-
-/* Animations */
 @keyframes flashHighlight {
-  0%, 100% { background: transparent; }
-  50% { background: var(--color-primary-200); }
+  0% { background: var(--color-primary-200); }
+  100% { background: transparent; }
 }
 
 @keyframes createFlash {
-  0% { background: transparent; transform: scale(1); }
-  25% { background: var(--color-primary-300); transform: scale(1.02); }
-  100% { background: transparent; transform: scale(1); }
+  0%, 100% { background: transparent; }
+  50% { background: var(--color-primary-100); }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.menu-item-wrapper {
+  animation: slideIn 0.2s ease-out;
 }
 </style>

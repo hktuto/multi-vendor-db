@@ -1,5 +1,15 @@
-import { pgTable, uuid, varchar, text, timestamp, boolean, jsonb, integer, unique } from 'drizzle-orm/pg-core'
-import { relations, sql } from 'drizzle-orm'
+import {
+  pgTable,
+  uuid,
+  varchar,
+  text,
+  timestamp,
+  boolean,
+  jsonb,
+  integer,
+  unique,
+} from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 
 // ============================================
 // IMPORTANT: ID Generation Rule
@@ -12,165 +22,271 @@ import { relations, sql } from 'drizzle-orm'
 // USERS & AUTHENTICATION
 // ============================================
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  email: varchar('email', { length: 255 }).notNull().unique(),
-  name: varchar('name', { length: 255 }).notNull(),
-  avatarUrl: text('avatar_url'),
-  preferences: jsonb('preferences').default({}).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  isActive: boolean('is_active').default(true).notNull(),
-})
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey(), // Application-generated UUID
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  avatarUrl: text("avatar_url"),
+  preferences: jsonb("preferences").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  isActive: boolean("is_active").default(true).notNull(),
+});
 
-export const userAccounts = pgTable('user_accounts', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  provider: varchar('provider', { length: 50 }).notNull(), // 'password', 'google', 'github', 'microsoft', 'saml'
-  providerAccountId: varchar('provider_account_id', { length: 255 }).notNull(),
-  passwordHash: varchar('password_hash', { length: 255 }),
-  lastPasswordUpdate: timestamp('last_password_update', { withTimezone: true }),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  expiresAt: timestamp('expires_at', { withTimezone: true }),
-  metadata: jsonb('metadata').default({}).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  unique('unique_provider_account').on(table.provider, table.providerAccountId),
-])
+export const userAccounts = pgTable(
+  "user_accounts",
+  {
+    id: uuid("id").primaryKey(), // Application-generated UUID
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 50 }).notNull(), // 'password', 'google', 'github', 'microsoft', 'saml'
+    providerAccountId: varchar("provider_account_id", {
+      length: 255,
+    }).notNull(),
+    passwordHash: varchar("password_hash", { length: 255 }),
+    lastPasswordUpdate: timestamp("last_password_update", {
+      withTimezone: true,
+    }),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    metadata: jsonb("metadata").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("unique_provider_account").on(
+      table.provider,
+      table.providerAccountId,
+    ),
+  ],
+);
 
 // ============================================
 // COMPANY & MEMBERS
 // ============================================
 
-export const companies = pgTable('companies', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  name: varchar('name', { length: 255 }).notNull(),
-  slug: varchar('slug', { length: 255 }).notNull().unique(),
-  ownerId: uuid('owner_id').notNull().references(() => users.id),
-  plan: varchar('plan', { length: 24 }).notNull().$type<'basic' | 'pro' | 'enterprise'>().default('basic'),
-  settings: jsonb('settings').default({
-    timezone: 'UTC',
-    dateFormat: 'YYYY-MM-DD',
-    defaultLanguage: 'en',
-    theme: {},
-  }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+export const companies = pgTable("companies", {
+  id: uuid("id").primaryKey(), // Application-generated UUID
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 255 }).notNull().unique(),
+  ownerId: uuid("owner_id")
+    .notNull()
+    .references(() => users.id),
+  plan: varchar("plan", { length: 24 })
+    .notNull()
+    .$type<"basic" | "pro" | "enterprise">()
+    .default("basic"),
+  settings: jsonb("settings")
+    .default({
+      timezone: "UTC",
+      dateFormat: "YYYY-MM-DD",
+      defaultLanguage: "en",
+      theme: {},
+    })
+    .notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
 
-export const companyMembers = pgTable('company_members', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'member'>(),
-  joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
-  invitedBy: uuid('invited_by').references(() => users.id),
-}, (table) => [
-  unique('unique_company_member').on(table.companyId, table.userId),
-])
+export const companyMembers = pgTable(
+  "company_members",
+  {
+    id: uuid("id").primaryKey(), // Application-generated UUID
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 20 }).notNull().$type<"admin" | "member">(),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    invitedBy: uuid("invited_by").references(() => users.id),
+  },
+  (table) => [
+    unique("unique_company_member").on(table.companyId, table.userId),
+    // Note: Drizzle doesn't support DEFERRABLE in .references()
+    // Use manual SQL in migration or post-migration hook
+  ],
+);
 
-export const userGroups = pgTable('user_groups', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  name: varchar('name', { length: 255 }).notNull(),
-  description: text('description'),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+export const userGroups = pgTable("user_groups", {
+  id: uuid("id").primaryKey(), // Application-generated UUID
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
-export const userGroupMembers = pgTable('user_group_members', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }), // Added for easy query & sync
-  groupId: uuid('group_id').notNull().references(() => userGroups.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'member'>(),
-  addedBy: uuid('added_by').notNull().references(() => users.id),
-  addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  unique('unique_group_member').on(table.groupId, table.userId),
-])
+export const userGroupMembers = pgTable(
+  "user_group_members",
+  {
+    id: uuid("id").primaryKey(), // Application-generated UUID
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }), // Added for easy query & sync
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => userGroups.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 20 }).notNull().$type<"admin" | "member">(),
+    addedBy: uuid("added_by")
+      .notNull()
+      .references(() => users.id),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [unique("unique_group_member").on(table.groupId, table.userId)],
+);
 
-export const inviteLinks = pgTable('invite_links', {
-  id: uuid('id').primaryKey(), // Application-generated UUID
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
-  email: varchar('email', { length: 255 }), // NEW: One invite per email per company
-  token: varchar('token', { length: 255 }).notNull().unique(),
-  role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'member'>(),
+export const inviteLinks = pgTable("invite_links", {
+  id: uuid("id").primaryKey(), // Application-generated UUID
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  email: varchar("email", { length: 255 }), // NEW: One invite per email per company
+  token: varchar("token", { length: 255 }).notNull().unique(),
+  role: varchar("role", { length: 20 }).notNull().$type<"admin" | "member">(),
   // REMOVED: maxUses, usedCount - one invite per person model
-  expiresAt: timestamp('expires_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  usedAt: timestamp('used_at', { withTimezone: true }),
-  usedBy: uuid('used_by').references(() => users.id),
-  isActive: boolean('is_active').default(true).notNull(),
-}, (table) => [
-  // unique('unique_company_invite_email').on(table.companyId, table.email), // Optional: enforce one invite per email
-])
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  usedBy: uuid("used_by").references(() => users.id),
+  isActive: boolean("is_active").default(true).notNull(),
+});
 
 // ============================================
 // SPACE & ITEMS (Unified Design)
 // ============================================
 
-export const spaces = pgTable('spaces', {
-  id: uuid('id').primaryKey(),
-  companyId: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
-  name: varchar('name', { length: 255 }).notNull(),
-  description: text('description'),
-  icon: varchar('icon', { length: 50 }),
-  color: varchar('color', { length: 7 }),
-  settings: jsonb('settings').default({}).notNull(),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+export const spaces = pgTable("spaces", {
+  id: uuid("id").primaryKey(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  icon: varchar("icon", { length: 50 }),
+  color: varchar("color", { length: 7 }),
+  settings: jsonb("settings").default({}).notNull(),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
 
-export const spaceMembers = pgTable('space_members', {
-  id: uuid('id').primaryKey(),
-  spaceId: uuid('space_id').notNull().references(() => spaces.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  role: varchar('role', { length: 20 }).notNull().$type<'admin' | 'editor' | 'viewer'>(),
-  joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
-  invitedBy: uuid('invited_by').references(() => users.id),
-}, (table) => [
-  unique('unique_space_member').on(table.spaceId, table.userId),
-])
+export const spaceMembers = pgTable(
+  "space_members",
+  {
+    id: uuid("id").primaryKey(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 20 })
+      .notNull()
+      .$type<"admin" | "editor" | "viewer">(),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    invitedBy: uuid("invited_by").references(() => users.id),
+  },
+  (table) => [unique("unique_space_member").on(table.spaceId, table.userId)],
+);
 
 // Unified items table - folder, table, view, dashboard all in one
-export const spaceItems = pgTable('space_items', {
-  id: uuid('id').primaryKey(),
-  spaceId: uuid('space_id').notNull().references(() => spaces.id, { onDelete: 'cascade' }),
-  parentId: uuid('parent_id').references(() => spaceItems.id),
-  type: varchar('type', { length: 50 }).notNull().$type<'folder' | 'table' | 'view' | 'dashboard'>(),
-  name: varchar('name', { length: 255 }).notNull(),
-  description: text('description'),
-  icon: varchar('icon', { length: 50 }),
-  color: varchar('color', { length: 7 }),
-  orderIndex: integer('order_index').default(0).notNull(),
-  config: jsonb('config').default({}).notNull(),
-  createdBy: uuid('created_by').notNull().references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
-}, (table) => [
-  unique('unique_space_item_name').on(table.spaceId, table.parentId, table.name),
-])
+export const spaceItems = pgTable("space_items", {
+  id: uuid("id").primaryKey(),
+  spaceId: uuid("space_id")
+    .notNull()
+    .references(() => spaces.id, { onDelete: "cascade" }),
+  parentId: uuid("parent_id").references(() => spaceItems.id),
+  type: varchar("type", { length: 50 })
+    .notNull()
+    .$type<"folder" | "table" | "view" | "dashboard">(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  icon: varchar("icon", { length: 50 }),
+  color: varchar("color", { length: 7 }),
+  orderIndex: integer("order_index").default(0).notNull(),
+  config: jsonb("config").default({}).notNull(),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
 
 // Item-level permissions - extends space membership
-export const spaceItemPermissions = pgTable('space_item_permissions', {
-  id: uuid('id').primaryKey(),
-  itemId: uuid('item_id').notNull().references(() => spaceItems.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  permission: varchar('permission', { length: 20 }).notNull().$type<'read' | 'readwrite' | 'manage'>(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  unique('unique_item_user_permission').on(table.itemId, table.userId),
-])
+export const spaceItemPermissions = pgTable(
+  "space_item_permissions",
+  {
+    id: uuid("id").primaryKey(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => spaceItems.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    permission: varchar("permission", { length: 20 })
+      .notNull()
+      .$type<"read" | "readwrite" | "manage">(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("unique_item_user_permission").on(table.itemId, table.userId),
+  ],
+);
 
 // ============================================
 // RELATIONS (for Drizzle ORM query builder)
@@ -178,17 +294,17 @@ export const spaceItemPermissions = pgTable('space_item_permissions', {
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(userAccounts),
-  ownedCompanies: many(companies, { relationName: 'owner' }),
+  ownedCompanies: many(companies, { relationName: "owner" }),
   memberships: many(companyMembers),
   groupMemberships: many(userGroupMembers),
-}))
+}));
 
 export const userAccountsRelations = relations(userAccounts, ({ one }) => ({
   user: one(users, {
     fields: [userAccounts.userId],
     references: [users.id],
   }),
-}))
+}));
 
 export const companiesRelations = relations(companies, ({ one, many }) => ({
   owner: one(users, {
@@ -199,7 +315,7 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
   groups: many(userGroups),
   spaces: many(spaces),
   inviteLinks: many(inviteLinks),
-}))
+}));
 
 export const companyMembersRelations = relations(companyMembers, ({ one }) => ({
   company: one(companies, {
@@ -214,7 +330,7 @@ export const companyMembersRelations = relations(companyMembers, ({ one }) => ({
     fields: [companyMembers.invitedBy],
     references: [users.id],
   }),
-}))
+}));
 
 export const userGroupsRelations = relations(userGroups, ({ one, many }) => ({
   company: one(companies, {
@@ -226,26 +342,29 @@ export const userGroupsRelations = relations(userGroups, ({ one, many }) => ({
     fields: [userGroups.createdBy],
     references: [users.id],
   }),
-}))
+}));
 
-export const userGroupMembersRelations = relations(userGroupMembers, ({ one }) => ({
-  company: one(companies, {
-    fields: [userGroupMembers.companyId],
-    references: [companies.id],
+export const userGroupMembersRelations = relations(
+  userGroupMembers,
+  ({ one }) => ({
+    company: one(companies, {
+      fields: [userGroupMembers.companyId],
+      references: [companies.id],
+    }),
+    group: one(userGroups, {
+      fields: [userGroupMembers.groupId],
+      references: [userGroups.id],
+    }),
+    user: one(users, {
+      fields: [userGroupMembers.userId],
+      references: [users.id],
+    }),
+    addedByUser: one(users, {
+      fields: [userGroupMembers.addedBy],
+      references: [users.id],
+    }),
   }),
-  group: one(userGroups, {
-    fields: [userGroupMembers.groupId],
-    references: [userGroups.id],
-  }),
-  user: one(users, {
-    fields: [userGroupMembers.userId],
-    references: [users.id],
-  }),
-  addedByUser: one(users, {
-    fields: [userGroupMembers.addedBy],
-    references: [users.id],
-  }),
-}))
+);
 
 export const inviteLinksRelations = relations(inviteLinks, ({ one }) => ({
   company: one(companies, {
@@ -260,7 +379,7 @@ export const inviteLinksRelations = relations(inviteLinks, ({ one }) => ({
     fields: [inviteLinks.usedBy],
     references: [users.id],
   }),
-}))
+}));
 
 // Space Relations
 export const spacesRelations = relations(spaces, ({ one, many }) => ({
@@ -274,7 +393,7 @@ export const spacesRelations = relations(spaces, ({ one, many }) => ({
   }),
   members: many(spaceMembers),
   items: many(spaceItems),
-}))
+}));
 
 export const spaceMembersRelations = relations(spaceMembers, ({ one }) => ({
   space: one(spaces, {
@@ -289,7 +408,7 @@ export const spaceMembersRelations = relations(spaceMembers, ({ one }) => ({
     fields: [spaceMembers.invitedBy],
     references: [users.id],
   }),
-}))
+}));
 
 export const spaceItemsRelations = relations(spaceItems, ({ one, many }) => ({
   space: one(spaces, {
@@ -305,15 +424,18 @@ export const spaceItemsRelations = relations(spaceItems, ({ one, many }) => ({
     references: [users.id],
   }),
   permissions: many(spaceItemPermissions),
-}))
+}));
 
-export const spaceItemPermissionsRelations = relations(spaceItemPermissions, ({ one }) => ({
-  item: one(spaceItems, {
-    fields: [spaceItemPermissions.itemId],
-    references: [spaceItems.id],
+export const spaceItemPermissionsRelations = relations(
+  spaceItemPermissions,
+  ({ one }) => ({
+    item: one(spaceItems, {
+      fields: [spaceItemPermissions.itemId],
+      references: [spaceItems.id],
+    }),
+    user: one(users, {
+      fields: [spaceItemPermissions.userId],
+      references: [users.id],
+    }),
   }),
-  user: one(users, {
-    fields: [spaceItemPermissions.userId],
-    references: [users.id],
-  }),
-}))
+);
