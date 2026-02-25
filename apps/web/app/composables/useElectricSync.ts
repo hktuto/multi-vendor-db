@@ -289,7 +289,6 @@ async function createSharedShape(
     // This replaces the separate ShapeStream we were creating before
     const shapeUnsubscribe = shape.stream.subscribe(async (messages) => {
       // Handle both single message and array of messages
-      console.log("stream message", shapeKey, messages);
       const messageArray = Array.isArray(messages) ? messages : [messages];
 
       for (const message of messageArray) {

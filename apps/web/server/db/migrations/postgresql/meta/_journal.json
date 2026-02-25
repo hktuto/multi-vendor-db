@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1771330087562,
-      "tag": "0000_flashy_sentinels",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1771335000000,
-      "tag": "0001_remove_fk_constraints",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1771349000000,
-      "tag": "0002_add_columns_and_rows",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1771350960337,
-      "tag": "0003_ancient_trauma",
+      "when": 1772005526436,
+      "tag": "0000_strange_la_nuit",
       "breakpoints": true
     }
   ]
